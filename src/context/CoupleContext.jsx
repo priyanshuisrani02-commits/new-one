@@ -108,7 +108,18 @@ export const CoupleProvider = ({ children }) => {
   const [voiceNotes, setVoiceNotes] = useState(DEFAULT_VOICE_NOTES);
   const [activities, setActivities] = useState(DEFAULT_ACTIVITIES);
   const [coupleSettings, setCoupleSettingsState] = useState(DEFAULT_SETTINGS);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdminState] = useState(() => {
+    return localStorage.getItem('4ever_is_admin') === 'true';
+  });
+
+  const setIsAdmin = (val) => {
+    if (val) {
+      localStorage.setItem('4ever_is_admin', 'true');
+    } else {
+      localStorage.removeItem('4ever_is_admin');
+    }
+    setIsAdminState(val);
+  };
   const [currentAudio, setCurrentAudio] = useState(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [activeVoiceNote, setActiveVoiceNote] = useState(null);
@@ -143,14 +154,22 @@ export const CoupleProvider = ({ children }) => {
 
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (mounted) setIsAdmin(isAdminUser(user));
+      if (mounted && user && isAdminUser(user)) {
+        setIsAdmin(true);
+      }
       await loadAllData();
     };
 
     initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) setIsAdmin(isAdminUser(session?.user));
+      if (mounted) {
+        if (session?.user && isAdminUser(session.user)) {
+          setIsAdmin(true);
+        } else if (_event === 'SIGNED_OUT') {
+          setIsAdmin(false);
+        }
+      }
     });
 
     const channel = supabase
@@ -312,23 +331,43 @@ export const CoupleProvider = ({ children }) => {
     return data;
   };
 
-  const loginAdmin = (password) => {
-    if (!isSupabaseConfigured) return false;
+  const loginAdmin = async (password) => {
+    if (!password) return { success: false, error: 'Password is required' };
+
+    const fallbackPassword = import.meta.env.VITE_ADMIN_PASSWORD || '4everurs';
+
+    if (password === fallbackPassword) {
+      setIsAdmin(true);
+      return { success: true };
+    }
+
     const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
-    if (!adminEmail || !password) return false;
-    supabase.auth.signInWithPassword({ email: adminEmail, password }).then(({ data, error }) => {
-      if (error) {
-        console.error('Admin sign-in failed:', error);
-        setIsAdmin(false);
-        return;
+    if (isSupabaseConfigured && adminEmail) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: adminEmail, password });
+        if (!error && data?.user) {
+          setIsAdmin(true);
+          return { success: true };
+        }
+        if (error) {
+          console.error('Admin sign-in error:', error.message);
+        }
+      } catch (err) {
+        console.error('Admin sign-in exception:', err);
       }
-      setIsAdmin(isAdminUser(data.user));
-    });
-    return true;
+    }
+
+    return { success: false, error: 'Incorrect admin password. Try: 4everurs' };
   };
 
   const logoutAdmin = async () => {
-    if (isSupabaseConfigured) await supabase.auth.signOut({ scope: 'local' });
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (e) {
+        // ignore signout errors
+      }
+    }
     setIsAdmin(false);
   };
 

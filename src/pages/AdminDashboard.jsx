@@ -67,14 +67,23 @@ export const AdminDashboard = () => {
   });
 
   const [settingsForm, setSettingsForm] = useState(coupleSettings);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    const success = loginAdmin(password);
-    if (!success) {
-      setErrorMsg('Incorrect admin password. Try: 4everurs');
-    } else {
-      setErrorMsg('');
+    setErrorMsg('');
+    setIsLoggingIn(true);
+    try {
+      const res = await loginAdmin(password);
+      if (typeof res === 'boolean') {
+        if (!res) setErrorMsg('Incorrect admin password. Try: 4everurs');
+      } else if (!res?.success) {
+        setErrorMsg(res?.error || 'Incorrect admin password. Try: 4everurs');
+      }
+    } catch (err) {
+      setErrorMsg(err?.message || 'Login failed');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -216,9 +225,10 @@ export const AdminDashboard = () => {
 
             <button
               type="submit"
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-rose-600 to-rose-500 text-white font-semibold text-sm shadow-lg shadow-rose-600/30 transition-all"
+              disabled={isLoggingIn}
+              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-rose-600 to-rose-500 text-white font-semibold text-sm shadow-lg shadow-rose-600/30 transition-all disabled:opacity-50"
             >
-              Unlock Admin Panel
+              {isLoggingIn ? 'Unlocking...' : 'Unlock Admin Panel'}
             </button>
           </form>
 
