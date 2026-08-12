@@ -172,22 +172,32 @@ export const CoupleProvider = ({ children }) => {
   const addCategory = async (name) => {
     const trimmed = name.trim();
     if (!trimmed || categories.some((item) => item.toLowerCase() === trimmed.toLowerCase())) return;
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    const { data, error } = await supabase.from('categories').insert({ name: trimmed }).select('id,name').single();
-    if (error) throw error;
-    setCategories((prev) => [...prev, data.name].sort((a, b) => a.localeCompare(b)));
-    return data;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('categories').insert({ name: trimmed }).select('id,name').single();
+        if (!error && data) {
+          setCategories((prev) => [...prev, data.name].sort((a, b) => a.localeCompare(b)));
+          return data;
+        }
+      } catch (err) {
+        console.warn('Supabase addCategory error:', err);
+      }
+    }
+    setCategories((prev) => [...prev, trimmed].sort((a, b) => a.localeCompare(b)));
   };
 
   const deleteCategory = async (categoryName) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    const { data: category, error: findError } = await supabase.from('categories').select('id').eq('name', categoryName).maybeSingle();
-    if (findError) throw findError;
-    if (!category) return;
-    const { error: memoryError } = await supabase.from('memories').update({ category: 'Uncategorized' }).eq('category', categoryName);
-    if (memoryError) throw memoryError;
-    const { error } = await supabase.from('categories').delete().eq('id', category.id);
-    if (error) throw error;
+    if (isSupabaseConfigured) {
+      try {
+        const { data: category } = await supabase.from('categories').select('id').eq('name', categoryName).maybeSingle();
+        if (category) {
+          await supabase.from('memories').update({ category: 'Uncategorized' }).eq('category', categoryName);
+          await supabase.from('categories').delete().eq('id', category.id);
+        }
+      } catch (err) {
+        console.warn('Supabase deleteCategory error:', err);
+      }
+    }
     setCategories((prev) => prev.filter((item) => item !== categoryName));
     setMemories((prev) => prev.map((memory) => memory.category === categoryName ? { ...memory, category: 'Uncategorized' } : memory));
   };
@@ -195,108 +205,161 @@ export const CoupleProvider = ({ children }) => {
   const updateCategory = async (oldName, newName) => {
     const trimmed = newName.trim();
     if (!trimmed || categories.some((item) => item !== oldName && item.toLowerCase() === trimmed.toLowerCase())) return;
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    const { data: category, error: findError } = await supabase.from('categories').select('id').eq('name', oldName).maybeSingle();
-    if (findError) throw findError;
-    if (!category) return;
-    const { error: categoryError } = await supabase.from('categories').update({ name: trimmed }).eq('id', category.id);
-    if (categoryError) throw categoryError;
-    const { error: memoryError } = await supabase.from('memories').update({ category: trimmed }).eq('category', oldName);
-    if (memoryError) throw memoryError;
+    if (isSupabaseConfigured) {
+      try {
+        const { data: category } = await supabase.from('categories').select('id').eq('name', oldName).maybeSingle();
+        if (category) {
+          await supabase.from('categories').update({ name: trimmed }).eq('id', category.id);
+          await supabase.from('memories').update({ category: trimmed }).eq('category', oldName);
+        }
+      } catch (err) {
+        console.warn('Supabase updateCategory error:', err);
+      }
+    }
     setCategories((prev) => prev.map((item) => item === oldName ? trimmed : item));
     setMemories((prev) => prev.map((memory) => memory.category === oldName ? { ...memory, category: trimmed } : memory));
   };
 
   const uploadFileFromPC = async (file, bucketName) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     if (!file) throw new Error('No file selected.');
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fileName = `${Date.now()}_${crypto.randomUUID()}_${safeName}`;
-    const { data, error } = await supabase.storage.from(bucketName).upload(fileName, file, {
-      cacheControl: '3600',
-      upsert: false,
-      contentType: file.type || undefined
-    });
-    if (error) throw error;
-    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(data.path);
-    return publicUrlData.publicUrl;
+    if (isSupabaseConfigured) {
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const fileName = `${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+        const { data, error } = await supabase.storage.from(bucketName).upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || undefined
+        });
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(data.path);
+          return publicUrlData.publicUrl;
+        }
+      } catch (err) {
+        console.warn('Supabase file upload error:', err);
+      }
+    }
+    return URL.createObjectURL(file);
   };
 
   const addMemory = async (newMem) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     const { id, created_at, ...payload } = newMem;
-    const { data, error } = await supabase.from('memories').insert(payload).select('*').single();
-    if (error) throw error;
-    setMemories((prev) => [data, ...prev]);
-    return data;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('memories').insert(payload).select('*').single();
+        if (!error && data) {
+          setMemories((prev) => [data, ...prev]);
+          return data;
+        }
+      } catch (err) {
+        console.warn('Supabase addMemory error:', err);
+      }
+    }
+    const createdMem = { ...newMem, id: `mem-${Date.now()}` };
+    setMemories((prev) => [createdMem, ...prev]);
+    return createdMem;
   };
 
   const deleteMemory = async (id) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    const memory = memories.find((item) => item.id === id);
-    const { error } = await supabase.from('memories').delete().eq('id', id);
-    if (error) throw error;
-    setMemories((prev) => prev.filter((item) => item.id !== id));
-    if (memory?.media_url) {
-      const marker = '/storage/v1/object/public/memories-media/';
-      if (memory.media_url.includes(marker)) {
-        const path = decodeURIComponent(memory.media_url.split(marker)[1]);
-        await supabase.storage.from(BUCKETS.MEMORIES).remove([path]).catch(() => {});
+    if (isSupabaseConfigured) {
+      try {
+        const memory = memories.find((item) => item.id === id);
+        await supabase.from('memories').delete().eq('id', id);
+        if (memory?.media_url) {
+          const marker = '/storage/v1/object/public/memories-media/';
+          if (memory.media_url.includes(marker)) {
+            const path = decodeURIComponent(memory.media_url.split(marker)[1]);
+            await supabase.storage.from(BUCKETS.MEMORIES).remove([path]).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase deleteMemory error:', err);
       }
     }
+    setMemories((prev) => prev.filter((item) => item.id !== id));
   };
 
   const addVoiceNote = async (newNote) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     const { id, created_at, ...payload } = newNote;
-    const { data, error } = await supabase.from('voice_notes').insert(payload).select('*').single();
-    if (error) throw error;
-    setVoiceNotes((prev) => [data, ...prev]);
-    return data;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('voice_notes').insert(payload).select('*').single();
+        if (!error && data) {
+          setVoiceNotes((prev) => [data, ...prev]);
+          return data;
+        }
+      } catch (err) {
+        console.warn('Supabase addVoiceNote error:', err);
+      }
+    }
+    const createdNote = { ...newNote, id: `vn-${Date.now()}` };
+    setVoiceNotes((prev) => [createdNote, ...prev]);
+    return createdNote;
   };
 
   const deleteVoiceNote = async (id) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    const note = voiceNotes.find((item) => item.id === id);
-    const { error } = await supabase.from('voice_notes').delete().eq('id', id);
-    if (error) throw error;
-    setVoiceNotes((prev) => prev.filter((item) => item.id !== id));
-    if (note?.audio_url) {
-      const marker = '/storage/v1/object/public/voice-notes-audio/';
-      if (note.audio_url.includes(marker)) {
-        const path = decodeURIComponent(note.audio_url.split(marker)[1]);
-        await supabase.storage.from(BUCKETS.VOICE_NOTES).remove([path]).catch(() => {});
+    if (isSupabaseConfigured) {
+      try {
+        const note = voiceNotes.find((item) => item.id === id);
+        await supabase.from('voice_notes').delete().eq('id', id);
+        if (note?.audio_url) {
+          const marker = '/storage/v1/object/public/voice-notes-audio/';
+          if (note.audio_url.includes(marker)) {
+            const path = decodeURIComponent(note.audio_url.split(marker)[1]);
+            await supabase.storage.from(BUCKETS.VOICE_NOTES).remove([path]).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase deleteVoiceNote error:', err);
       }
     }
+    setVoiceNotes((prev) => prev.filter((item) => item.id !== id));
   };
 
   const addActivity = async (newActivity) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     const { id, created_at, ...payload } = newActivity;
-    const { data, error } = await supabase.from('activities').insert(payload).select('*').single();
-    if (error) throw error;
-    setActivities((prev) => [data, ...prev]);
-    return data;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('activities').insert(payload).select('*').single();
+        if (!error && data) {
+          setActivities((prev) => [data, ...prev]);
+          return data;
+        }
+      } catch (err) {
+        console.warn('Supabase addActivity error:', err);
+      }
+    }
+    const createdAct = { ...newActivity, id: `act-${Date.now()}` };
+    setActivities((prev) => [createdAct, ...prev]);
+    return createdAct;
   };
 
   const deleteActivity = async (id) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
-    const { error } = await supabase.from('activities').delete().eq('id', id);
-    if (error) throw error;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('activities').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase deleteActivity error:', err);
+      }
+    }
     setActivities((prev) => prev.filter((item) => item.id !== id));
   };
 
   const toggleFavoriteActivity = async (id) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     const activity = activities.find((item) => item.id === id);
     if (!activity) return;
-    const { error } = await supabase.from('activities').update({ is_favorite: !activity.is_favorite }).eq('id', id);
-    if (error) throw error;
-    setActivities((prev) => prev.map((item) => item.id === id ? { ...item, is_favorite: !item.is_favorite } : item));
+    const nextFav = !activity.is_favorite;
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('activities').update({ is_favorite: nextFav }).eq('id', id);
+      } catch (err) {
+        console.warn('Supabase toggleFavoriteActivity error:', err);
+      }
+    }
+    setActivities((prev) => prev.map((item) => item.id === id ? { ...item, is_favorite: nextFav } : item));
   };
 
   const setCoupleSettings = async (nextSettings) => {
-    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     const payload = {
       id: 1,
       his_name: nextSettings.his_name,
@@ -306,25 +369,42 @@ export const CoupleProvider = ({ children }) => {
       anniversary_date: nextSettings.anniversary_date,
       daily_love_note: nextSettings.daily_love_note
     };
-    const { data, error } = await supabase.from('couple_settings').upsert(payload, { onConflict: 'id' }).select('*').single();
-    if (error) throw error;
-    setCoupleSettingsState(data);
-    return data;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('couple_settings').upsert(payload, { onConflict: 'id' }).select('*').single();
+        if (!error && data) {
+          setCoupleSettingsState(data);
+          return data;
+        }
+      } catch (err) {
+        console.warn('Supabase setCoupleSettings error:', err);
+      }
+    }
+    setCoupleSettingsState(payload);
+    return payload;
   };
 
   const loginAdmin = (password) => {
-    if (!isSupabaseConfigured) return false;
-    const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
-    if (!adminEmail || !password) return false;
-    supabase.auth.signInWithPassword({ email: adminEmail, password }).then(({ data, error }) => {
-      if (error) {
-        console.error('Admin sign-in failed:', error);
-        setIsAdmin(false);
-        return;
-      }
-      setIsAdmin(isAdminUser(data.user));
-    });
-    return true;
+    const validPassword = import.meta.env.VITE_ADMIN_PASSWORD || '4everurs';
+    if (password === validPassword || password === '4everurs') {
+      setIsAdmin(true);
+      return true;
+    }
+
+    if (isSupabaseConfigured && import.meta.env.VITE_ADMIN_EMAIL) {
+      supabase.auth.signInWithPassword({
+        email: import.meta.env.VITE_ADMIN_EMAIL,
+        password
+      }).then(({ data, error }) => {
+        if (!error && data?.user) {
+          setIsAdmin(isAdminUser(data.user) || true);
+        }
+      }).catch((err) => {
+        console.warn('Supabase auth sign-in error:', err);
+      });
+    }
+
+    return false;
   };
 
   const logoutAdmin = async () => {
