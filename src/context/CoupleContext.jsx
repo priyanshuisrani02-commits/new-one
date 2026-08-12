@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured, BUCKETS } from '../lib/supabaseClient';
 
 const CoupleContext = createContext();
 
-// Default Demo Data
 const DEFAULT_SETTINGS = {
+  id: 1,
   his_name: 'Alex',
   her_name: 'Maya',
   his_timezone: 'America/New_York',
@@ -71,332 +71,302 @@ const DEFAULT_VOICE_NOTES = [
 ];
 
 const DEFAULT_ACTIVITIES = [
-  {
-    id: 'act-1',
-    title: 'Virtual Star Gazing & Chill 🌌',
-    description: 'Open up Stellarium online together, share screen, pick a constellation, and talk about our future dreams while listening to low-fi beats.',
-    category: 'online_date',
-    estimated_minutes: 45,
-    is_favorite: true
-  },
-  {
-    id: 'act-2',
-    title: 'Simultaneous Movie Watch Party 🍿',
-    description: 'Use Teleparty or Discord to sync up our favorite romantic movie. Grab your favorite snacks and react in real-time!',
-    category: 'online_date',
-    estimated_minutes: 120,
-    is_favorite: false
-  },
-  {
-    id: 'act-3',
-    title: '21 Deep Questions for Couples 💬',
-    description: 'Take turns asking 3 deep questions from a relationship deck. No holding back—just honesty, vulnerability, and warmth.',
-    category: 'deep_talk',
-    estimated_minutes: 30,
-    is_favorite: true
-  },
-  {
-    id: 'act-4',
-    title: 'Google Earth Exploration Date 🗺️',
-    description: 'Pick a city we want to visit together in 5 years. Explore street views and map out our future dream vacation route.',
-    category: 'game',
-    estimated_minutes: 40,
-    is_favorite: false
-  },
-  {
-    id: 'act-5',
-    title: 'Online Co-op Drawing Battle 🎨',
-    description: 'Use Skribbl.io or Aggie.io to draw funny caricatures of each other or sketch our future dream house together.',
-    category: 'creative',
-    estimated_minutes: 25,
-    is_favorite: false
-  }
+  { id: 'act-1', title: 'Virtual Star Gazing & Chill 🌌', description: 'Open up Stellarium online together, share screen, pick a constellation, and talk about future dreams while listening to low-fi beats.', category: 'online_date', estimated_minutes: 45, is_favorite: true },
+  { id: 'act-2', title: 'Simultaneous Movie Watch Party 🍿', description: 'Use a synchronized watch party and react in real-time.', category: 'online_date', estimated_minutes: 120, is_favorite: false },
+  { id: 'act-3', title: '21 Deep Questions for Couples 💬', description: 'Take turns asking thoughtful questions with honesty, vulnerability, and warmth.', category: 'deep_talk', estimated_minutes: 30, is_favorite: true },
+  { id: 'act-4', title: 'Google Earth Exploration Date 🗺️', description: 'Pick a city you want to visit together and explore it.', category: 'game', estimated_minutes: 40, is_favorite: false },
+  { id: 'act-5', title: 'Online Co-op Drawing Battle 🎨', description: 'Draw funny caricatures or sketch your future dream house together.', category: 'creative', estimated_minutes: 25, is_favorite: false }
 ];
 
-// Melodious Page Transition Chime
 export const playMelodiousChime = () => {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
-    
-    const notes = [659.25, 830.61, 987.77, 1318.51];
-    notes.forEach((freq, idx) => {
+    [659.25, 830.61, 987.77, 1318.51].forEach((freq, idx) => {
+      const start = ctx.currentTime + idx * 0.05;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.05);
-      
-      gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + idx * 0.05 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.05 + 0.7);
-      
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.12, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.7);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      
-      osc.start(ctx.currentTime + idx * 0.05);
-      osc.stop(ctx.currentTime + idx * 0.05 + 0.75);
+      osc.start(start);
+      osc.stop(start + 0.75);
     });
-  } catch (e) {}
+  } catch (error) {
+    console.warn('Audio chime unavailable:', error);
+  }
 };
 
 export const CoupleProvider = ({ children }) => {
-  // State
-  const [categories, setCategories] = useState(() => {
-    const saved = localStorage.getItem('4ever_categories');
-    return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
-  });
-
-  const [memories, setMemories] = useState(() => {
-    const saved = localStorage.getItem('4ever_memories');
-    return saved ? JSON.parse(saved) : DEFAULT_MEMORIES;
-  });
-
-  const [voiceNotes, setVoiceNotes] = useState(() => {
-    const saved = localStorage.getItem('4ever_voicenotes');
-    return saved ? JSON.parse(saved) : DEFAULT_VOICE_NOTES;
-  });
-
-  const [activities, setActivities] = useState(() => {
-    const saved = localStorage.getItem('4ever_activities');
-    return saved ? JSON.parse(saved) : DEFAULT_ACTIVITIES;
-  });
-
-  const [coupleSettings, setCoupleSettings] = useState(() => {
-    const saved = localStorage.getItem('4ever_settings');
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
-  });
-
-  const [isAdmin, setIsAdmin] = useState(() => {
-    return localStorage.getItem('4ever_is_admin') === 'true';
-  });
-
-  // Audio Voice Note Playback State
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [memories, setMemories] = useState(DEFAULT_MEMORIES);
+  const [voiceNotes, setVoiceNotes] = useState(DEFAULT_VOICE_NOTES);
+  const [activities, setActivities] = useState(DEFAULT_ACTIVITIES);
+  const [coupleSettings, setCoupleSettingsState] = useState(DEFAULT_SETTINGS);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [currentAudio, setCurrentAudio] = useState(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [activeVoiceNote, setActiveVoiceNote] = useState(null);
 
-  // Sync LocalStorage
-  useEffect(() => {
-    localStorage.setItem('4ever_categories', JSON.stringify(categories));
-  }, [categories]);
+  const isAdminUser = (user) => Boolean(user && user.app_metadata?.role === 'admin');
+
+  const loadAllData = async () => {
+    if (!isSupabaseConfigured) return;
+
+    const [categoriesResult, memoriesResult, voiceNotesResult, activitiesResult, settingsResult] = await Promise.all([
+      supabase.from('categories').select('id,name').order('name', { ascending: true }),
+      supabase.from('memories').select('*').order('created_at', { ascending: false }),
+      supabase.from('voice_notes').select('*').order('created_at', { ascending: false }),
+      supabase.from('activities').select('*').order('created_at', { ascending: false }),
+      supabase.from('couple_settings').select('*').eq('id', 1).maybeSingle()
+    ]);
+
+    if (!categoriesResult.error && categoriesResult.data?.length) setCategories(categoriesResult.data.map((item) => item.name));
+    if (!memoriesResult.error && memoriesResult.data) setMemories(memoriesResult.data);
+    if (!voiceNotesResult.error && voiceNotesResult.data) setVoiceNotes(voiceNotesResult.data);
+    if (!activitiesResult.error && activitiesResult.data) setActivities(activitiesResult.data);
+    if (!settingsResult.error && settingsResult.data) setCoupleSettingsState(settingsResult.data);
+
+    [categoriesResult, memoriesResult, voiceNotesResult, activitiesResult, settingsResult].forEach((result) => {
+      if (result.error) console.error('Supabase data load failed:', result.error);
+    });
+  };
 
   useEffect(() => {
-    localStorage.setItem('4ever_memories', JSON.stringify(memories));
-  }, [memories]);
+    if (!isSupabaseConfigured) return undefined;
+    let mounted = true;
 
-  useEffect(() => {
-    localStorage.setItem('4ever_voicenotes', JSON.stringify(voiceNotes));
-  }, [voiceNotes]);
+    const initialize = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (mounted) setIsAdmin(isAdminUser(user));
+      await loadAllData();
+    };
 
-  useEffect(() => {
-    localStorage.setItem('4ever_activities', JSON.stringify(activities));
-  }, [activities]);
+    initialize();
 
-  useEffect(() => {
-    localStorage.setItem('4ever_settings', JSON.stringify(coupleSettings));
-  }, [coupleSettings]);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) setIsAdmin(isAdminUser(session?.user));
+    });
 
-  useEffect(() => {
-    localStorage.setItem('4ever_is_admin', isAdmin ? 'true' : 'false');
-  }, [isAdmin]);
+    const channel = supabase
+      .channel('4ever-urs-data-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, loadAllData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'memories' }, loadAllData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'voice_notes' }, loadAllData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, loadAllData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'couple_settings' }, loadAllData)
+      .subscribe();
 
-  // Category CRUD
-  const addCategory = (name) => {
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const addCategory = async (name) => {
     const trimmed = name.trim();
-    if (!trimmed || categories.includes(trimmed)) return;
-    setCategories(prev => [...prev, trimmed]);
+    if (!trimmed || categories.some((item) => item.toLowerCase() === trimmed.toLowerCase())) return;
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { data, error } = await supabase.from('categories').insert({ name: trimmed }).select('id,name').single();
+    if (error) throw error;
+    setCategories((prev) => [...prev, data.name].sort((a, b) => a.localeCompare(b)));
+    return data;
   };
 
-  const deleteCategory = (catToDelete) => {
-    setCategories(prev => prev.filter(c => c !== catToDelete));
-    // Update memories belonging to deleted category
-    setMemories(prev => prev.map(m => m.category === catToDelete ? { ...m, category: 'Uncategorized' } : m));
+  const deleteCategory = async (categoryName) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { data: category, error: findError } = await supabase.from('categories').select('id').eq('name', categoryName).maybeSingle();
+    if (findError) throw findError;
+    if (!category) return;
+    const { error: memoryError } = await supabase.from('memories').update({ category: 'Uncategorized' }).eq('category', categoryName);
+    if (memoryError) throw memoryError;
+    const { error } = await supabase.from('categories').delete().eq('id', category.id);
+    if (error) throw error;
+    setCategories((prev) => prev.filter((item) => item !== categoryName));
+    setMemories((prev) => prev.map((memory) => memory.category === categoryName ? { ...memory, category: 'Uncategorized' } : memory));
   };
 
-  const updateCategory = (oldName, newName) => {
+  const updateCategory = async (oldName, newName) => {
     const trimmed = newName.trim();
-    if (!trimmed || categories.includes(trimmed)) return;
-    setCategories(prev => prev.map(c => c === oldName ? trimmed : c));
-    setMemories(prev => prev.map(m => m.category === oldName ? { ...m, category: trimmed } : m));
+    if (!trimmed || categories.some((item) => item !== oldName && item.toLowerCase() === trimmed.toLowerCase())) return;
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { data: category, error: findError } = await supabase.from('categories').select('id').eq('name', oldName).maybeSingle();
+    if (findError) throw findError;
+    if (!category) return;
+    const { error: categoryError } = await supabase.from('categories').update({ name: trimmed }).eq('id', category.id);
+    if (categoryError) throw categoryError;
+    const { error: memoryError } = await supabase.from('memories').update({ category: trimmed }).eq('category', oldName);
+    if (memoryError) throw memoryError;
+    setCategories((prev) => prev.map((item) => item === oldName ? trimmed : item));
+    setMemories((prev) => prev.map((memory) => memory.category === oldName ? { ...memory, category: trimmed } : memory));
   };
 
-  // Voice Note Playback Controller
-  const playVoiceNote = (note) => {
-    if (currentAudio) {
-      currentAudio.pause();
-    }
+  const uploadFileFromPC = async (file, bucketName) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    if (!file) throw new Error('No file selected.');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileName = `${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+    const { data, error } = await supabase.storage.from(bucketName).upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || undefined
+    });
+    if (error) throw error;
+    const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(data.path);
+    return publicUrlData.publicUrl;
+  };
 
+  const addMemory = async (newMem) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { id, created_at, ...payload } = newMem;
+    const { data, error } = await supabase.from('memories').insert(payload).select('*').single();
+    if (error) throw error;
+    setMemories((prev) => [data, ...prev]);
+    return data;
+  };
+
+  const deleteMemory = async (id) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const memory = memories.find((item) => item.id === id);
+    const { error } = await supabase.from('memories').delete().eq('id', id);
+    if (error) throw error;
+    setMemories((prev) => prev.filter((item) => item.id !== id));
+    if (memory?.media_url) {
+      const marker = '/storage/v1/object/public/memories-media/';
+      if (memory.media_url.includes(marker)) {
+        const path = decodeURIComponent(memory.media_url.split(marker)[1]);
+        await supabase.storage.from(BUCKETS.MEMORIES).remove([path]).catch(() => {});
+      }
+    }
+  };
+
+  const addVoiceNote = async (newNote) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { id, created_at, ...payload } = newNote;
+    const { data, error } = await supabase.from('voice_notes').insert(payload).select('*').single();
+    if (error) throw error;
+    setVoiceNotes((prev) => [data, ...prev]);
+    return data;
+  };
+
+  const deleteVoiceNote = async (id) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const note = voiceNotes.find((item) => item.id === id);
+    const { error } = await supabase.from('voice_notes').delete().eq('id', id);
+    if (error) throw error;
+    setVoiceNotes((prev) => prev.filter((item) => item.id !== id));
+    if (note?.audio_url) {
+      const marker = '/storage/v1/object/public/voice-notes-audio/';
+      if (note.audio_url.includes(marker)) {
+        const path = decodeURIComponent(note.audio_url.split(marker)[1]);
+        await supabase.storage.from(BUCKETS.VOICE_NOTES).remove([path]).catch(() => {});
+      }
+    }
+  };
+
+  const addActivity = async (newActivity) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { id, created_at, ...payload } = newActivity;
+    const { data, error } = await supabase.from('activities').insert(payload).select('*').single();
+    if (error) throw error;
+    setActivities((prev) => [data, ...prev]);
+    return data;
+  };
+
+  const deleteActivity = async (id) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const { error } = await supabase.from('activities').delete().eq('id', id);
+    if (error) throw error;
+    setActivities((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const toggleFavoriteActivity = async (id) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const activity = activities.find((item) => item.id === id);
+    if (!activity) return;
+    const { error } = await supabase.from('activities').update({ is_favorite: !activity.is_favorite }).eq('id', id);
+    if (error) throw error;
+    setActivities((prev) => prev.map((item) => item.id === id ? { ...item, is_favorite: !item.is_favorite } : item));
+  };
+
+  const setCoupleSettings = async (nextSettings) => {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const payload = {
+      id: 1,
+      his_name: nextSettings.his_name,
+      her_name: nextSettings.her_name,
+      his_timezone: nextSettings.his_timezone,
+      her_timezone: nextSettings.her_timezone,
+      anniversary_date: nextSettings.anniversary_date,
+      daily_love_note: nextSettings.daily_love_note
+    };
+    const { data, error } = await supabase.from('couple_settings').upsert(payload, { onConflict: 'id' }).select('*').single();
+    if (error) throw error;
+    setCoupleSettingsState(data);
+    return data;
+  };
+
+  const loginAdmin = (password) => {
+    if (!isSupabaseConfigured) return false;
+    const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+    if (!adminEmail || !password) return false;
+    supabase.auth.signInWithPassword({ email: adminEmail, password }).then(({ data, error }) => {
+      if (error) {
+        console.error('Admin sign-in failed:', error);
+        setIsAdmin(false);
+        return;
+      }
+      setIsAdmin(isAdminUser(data.user));
+    });
+    return true;
+  };
+
+  const logoutAdmin = async () => {
+    if (isSupabaseConfigured) await supabase.auth.signOut({ scope: 'local' });
+    setIsAdmin(false);
+  };
+
+  const playVoiceNote = (note) => {
+    if (currentAudio) currentAudio.pause();
     if (activeVoiceNote?.id === note.id && isPlayingAudio) {
       setIsPlayingAudio(false);
       return;
     }
-
     const audio = new Audio(note.audio_url);
     audio.play().then(() => {
       setIsPlayingAudio(true);
       setActiveVoiceNote(note);
       setCurrentAudio(audio);
-    }).catch(err => {
-      console.error('Audio playback error:', err);
-      setIsPlayingAudio(true);
-      setActiveVoiceNote(note);
-    });
-
+    }).catch((error) => console.error('Audio playback error:', error));
     audio.onended = () => {
       setIsPlayingAudio(false);
+      setCurrentAudio(null);
     };
   };
 
   const stopVoiceNote = () => {
-    if (currentAudio) {
-      currentAudio.pause();
-    }
+    if (currentAudio) currentAudio.pause();
+    setCurrentAudio(null);
     setIsPlayingAudio(false);
   };
 
-  // Upload File Helper
-  const uploadFileFromPC = async (file, bucketName) => {
-    return new Promise(async (resolve, reject) => {
-      if (isSupabaseConfigured) {
-        try {
-          const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-          const { data, error } = await supabase.storage.from(bucketName).upload(fileName, file);
-          if (!error && data) {
-            const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(fileName);
-            return resolve(publicUrlData.publicUrl);
-          }
-        } catch (e) {
-          console.warn('Supabase storage fallback to local Base64:', e);
-        }
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = (err) => reject(err);
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Memory CRUD
-  const addMemory = async (newMem) => {
-    const memItem = {
-      ...newMem,
-      id: newMem.id || `mem-${Date.now()}`,
-      created_at: new Date().toISOString()
-    };
-
-    setMemories(prev => [memItem, ...prev]);
-
-    if (isSupabaseConfigured) {
-      await supabase.from('memories').insert([memItem]);
-    }
-  };
-
-  const deleteMemory = async (id) => {
-    setMemories(prev => prev.filter(m => m.id !== id));
-    if (isSupabaseConfigured) {
-      await supabase.from('memories').delete().eq('id', id);
-    }
-  };
-
-  // Voice Note CRUD
-  const addVoiceNote = async (newNote) => {
-    const noteItem = {
-      ...newNote,
-      id: newNote.id || `vn-${Date.now()}`,
-      created_at: new Date().toISOString()
-    };
-
-    setVoiceNotes(prev => [noteItem, ...prev]);
-
-    if (isSupabaseConfigured) {
-      await supabase.from('voice_notes').insert([noteItem]);
-    }
-  };
-
-  const deleteVoiceNote = async (id) => {
-    setVoiceNotes(prev => prev.filter(v => v.id !== id));
-    if (isSupabaseConfigured) {
-      await supabase.from('voice_notes').delete().eq('id', id);
-    }
-  };
-
-  // Activity CRUD
-  const addActivity = async (newAct) => {
-    const actItem = {
-      ...newAct,
-      id: newAct.id || `act-${Date.now()}`,
-      created_at: new Date().toISOString()
-    };
-
-    setActivities(prev => [actItem, ...prev]);
-
-    if (isSupabaseConfigured) {
-      await supabase.from('activities').insert([actItem]);
-    }
-  };
-
-  const deleteActivity = async (id) => {
-    setActivities(prev => prev.filter(a => a.id !== id));
-    if (isSupabaseConfigured) {
-      await supabase.from('activities').delete().eq('id', id);
-    }
-  };
-
-  const toggleFavoriteActivity = (id) => {
-    setActivities(prev => prev.map(a => a.id === id ? { ...a, is_favorite: !a.is_favorite } : a));
-  };
-
-  // Admin Auth
-  const loginAdmin = (password) => {
-    if (password === '4everurs' || password === 'love123' || password === 'admin') {
-      setIsAdmin(true);
-      return true;
-    }
-    return false;
-  };
-
-  const logoutAdmin = () => {
-    setIsAdmin(false);
-  };
-
   const value = {
-    categories,
-    addCategory,
-    deleteCategory,
-    updateCategory,
-    memories,
-    voiceNotes,
-    activities,
-    coupleSettings,
-    setCoupleSettings,
-    isAdmin,
-    loginAdmin,
-    logoutAdmin,
-    // Audio Controls
-    activeVoiceNote,
-    isPlayingAudio,
-    playVoiceNote,
-    stopVoiceNote,
-    playMelodiousChime,
-    uploadFileFromPC,
-    // CRUD Operations
-    addMemory,
-    deleteMemory,
-    addVoiceNote,
-    deleteVoiceNote,
-    addActivity,
-    deleteActivity,
-    toggleFavoriteActivity
+    categories, addCategory, deleteCategory, updateCategory,
+    memories, voiceNotes, activities, coupleSettings, setCoupleSettings,
+    isAdmin, loginAdmin, logoutAdmin,
+    activeVoiceNote, isPlayingAudio, playVoiceNote, stopVoiceNote,
+    playMelodiousChime, uploadFileFromPC,
+    addMemory, deleteMemory, addVoiceNote, deleteVoiceNote,
+    addActivity, deleteActivity, toggleFavoriteActivity
   };
 
-  return (
-    <CoupleContext.Provider value={value}>
-      {children}
-    </CoupleContext.Provider>
-  );
+  return <CoupleContext.Provider value={value}>{children}</CoupleContext.Provider>;
 };
 
 export const useCouple = () => useContext(CoupleContext);
