@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, ShieldCheck, Plus, Trash2, Image, Video, Mic, Dices, Save, LogOut, Settings, Upload, CheckCircle2, FileAudio, FileImage, FolderPlus, Tag } from 'lucide-react';
+import { Lock, ShieldCheck, Plus, Trash2, Image, Video, Mic, Dices, Save, LogOut, Settings, Upload, CheckCircle2, FileAudio, FileImage, FolderPlus, Tag, X } from 'lucide-react';
 import { useCouple } from '../context/CoupleContext';
 import { BUCKETS } from '../lib/supabaseClient';
 
@@ -38,6 +38,8 @@ export const AdminDashboard = () => {
   // Loading States
   const [isUploadingMem, setIsUploadingMem] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [memoryUploadProgress, setMemoryUploadProgress] = useState({ completed: 0, total: 0 });
+  const [selectedMemoryFiles, setSelectedMemoryFiles] = useState([]);
 
   // Form States
   const [newMem, setNewMem] = useState({
@@ -87,26 +89,29 @@ export const AdminDashboard = () => {
     alert(`Category "${newCategoryInput.trim()}" added!`);
   };
 
-  // Local PC File Upload for Memories
-  const handleMemoryFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Local PC File Selection for Memories. Multiple files are uploaded when Save Memory is pressed.
+  const handleMemoryFileUpload = (e) => {
+    const files = Array.from(e.target.files || [])
+      .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
+      .slice(0, 100);
 
-    setIsUploadingMem(true);
-    try {
-      const url = await uploadFileFromPC(file, BUCKETS.MEMORIES);
-      const isVideo = file.type.startsWith('video');
-      setNewMem(prev => ({
-        ...prev,
-        media_url: url,
-        media_type: isVideo ? 'video' : 'image',
-        title: prev.title || file.name.split('.')[0]
-      }));
-    } catch (err) {
-      alert('Error loading file from PC: ' + err.message);
-    } finally {
-      setIsUploadingMem(false);
-    }
+    if (!files.length) return;
+
+    setSelectedMemoryFiles(files);
+    setMemoryUploadProgress({ completed: 0, total: files.length });
+    setNewMem((prev) => ({
+      ...prev,
+      media_url: '',
+      media_type: files.length === 1 && files[0].type.startsWith('video') ? 'video' : 'image',
+      title: prev.title || (files.length === 1 ? files[0].name.replace(/\.[^/.]+$/, '') : '')
+    }));
+  };
+
+  const clearMemoryFileSelection = () => {
+    setSelectedMemoryFiles([]);
+    setMemoryUploadProgress({ completed: 0, total: 0 });
+    const input = document.getElementById('memoryFileInput');
+    if (input) input.value = '';
   };
 
   // Local PC File Upload for Voice Notes
@@ -129,24 +134,81 @@ export const AdminDashboard = () => {
     }
   };
 
-  const handleAddMemorySubmit = (e) => {
+  const handleAddMemorySubmit = async (e) => {
     e.preventDefault();
-    if (!newMem.title || !newMem.media_url) {
-      alert('Please upload a file or provide a URL!');
+
+    if (!selectedMemoryFiles.length) {
+      alert('Please choose at least one photo or video. You can select many files at once.');
       return;
     }
-    addMemory(newMem);
-    setNewMem({
-      title: '',
-      description: '',
-      media_url: '',
-      media_type: 'image',
-      memory_date: new Date().toISOString().split('T')[0],
-      category: categories[0] || 'Vacation',
-      location: '',
-      is_featured: false
-    });
-    alert('Memory uploaded successfully!');
+
+    setIsUploadingMem(true);
+    setMemoryUploadProgress({ completed: 0, total: selectedMemoryFiles.length });
+
+    const files = [...selectedMemoryFiles];
+    const baseTitle = newMem.title.trim();
+    const workerCount = Math.min(3, files.length);
+    let nextIndex = 0;
+    let successCount = 0;
+    const failures = [];
+
+    const uploadWorker = async () => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        if (currentIndex >= files.length) return;
+
+        const file = files[currentIndex];
+        const fileTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+        const title = baseTitle
+          ? (files.length === 1 ? baseTitle : `${baseTitle} — ${fileTitle}`)
+          : fileTitle || `Memory ${currentIndex + 1}`;
+
+        try {
+          const url = await uploadFileFromPC(file, BUCKETS.MEMORIES);
+          await addMemory({
+            ...newMem,
+            title,
+            media_url: url,
+            media_type: file.type.startsWith('video') ? 'video' : 'image'
+          });
+          successCount += 1;
+        } catch (err) {
+          failures.push(`${file.name}: ${err.message}`);
+        } finally {
+          setMemoryUploadProgress((prev) => ({
+            ...prev,
+            completed: prev.completed + 1
+          }));
+        }
+      }
+    };
+
+    try {
+      await Promise.all(Array.from({ length: workerCount }, () => uploadWorker()));
+    } finally {
+      setIsUploadingMem(false);
+    }
+
+    if (successCount > 0) {
+      setNewMem({
+        title: '',
+        description: '',
+        media_url: '',
+        media_type: 'image',
+        memory_date: new Date().toISOString().split('T')[0],
+        category: categories[0] || 'Vacation',
+        location: '',
+        is_featured: false
+      });
+      clearMemoryFileSelection();
+    }
+
+    if (failures.length) {
+      alert(`${successCount} of ${files.length} memories uploaded. ${failures.length} failed.\n\n${failures.slice(0, 5).join('\n')}${failures.length > 5 ? '\n…and more.' : ''}`);
+    } else {
+      alert(`${successCount} ${successCount === 1 ? 'memory' : 'memories'} uploaded successfully!`);
+    }
   };
 
   const handleAddVoiceNoteSubmit = (e) => {
@@ -286,7 +348,7 @@ export const AdminDashboard = () => {
           <div className="lg:col-span-1 glass-panel p-6 rounded-3xl border border-rose-500/30">
             <h3 className="font-serif text-xl font-bold text-white mb-4 flex items-center space-x-2">
               <Upload className="w-5 h-5 text-rose-400" />
-              <span>Add Memory from PC</span>
+              <span>Add Memories from PC</span>
             </h3>
 
             <form onSubmit={handleAddMemorySubmit} className="space-y-4 text-xs">
@@ -296,35 +358,74 @@ export const AdminDashboard = () => {
                   type="file"
                   id="memoryFileInput"
                   accept="image/*,video/*"
+                  multiple
                   onChange={handleMemoryFileUpload}
                   className="hidden"
                 />
                 <label htmlFor="memoryFileInput" className="cursor-pointer flex flex-col items-center justify-center">
                   <FileImage className="w-8 h-8 text-rose-400 mb-2" />
                   <span className="text-rose-200 font-semibold text-xs">
-                    {isUploadingMem ? 'Loading File...' : 'Choose Photo or Video from PC'}
+                    {isUploadingMem ? `Uploading ${memoryUploadProgress.completed}/${memoryUploadProgress.total}…` : 'Choose Photos or Videos'}
                   </span>
-                  <span className="text-[10px] text-rose-400/60 mt-1">Supports JPG, PNG, MP4, MOV</span>
+                  <span className="text-[10px] text-rose-400/60 mt-1">Select multiple JPG, PNG, MP4, MOV files at once · up to 100</span>
                 </label>
 
-                {newMem.media_url && (
-                  <div className="mt-3 p-2 bg-rose-900/40 rounded-xl text-[11px] text-emerald-300 font-medium flex items-center justify-center space-x-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Media File Attached!</span>
+                {selectedMemoryFiles.length > 0 && (
+                  <div className="mt-3 p-3 bg-rose-900/40 rounded-xl text-left">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center space-x-1.5 text-[11px] text-emerald-300 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{selectedMemoryFiles.length} {selectedMemoryFiles.length === 1 ? 'file' : 'files'} selected</span>
+                      </div>
+                      {!isUploadingMem && (
+                        <button
+                          type="button"
+                          onClick={clearMemoryFileSelection}
+                          className="p-1 rounded-lg text-rose-300/70 hover:text-white hover:bg-rose-950/60"
+                          aria-label="Clear selected files"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 space-y-1 max-h-28 overflow-y-auto pr-1">
+                      {selectedMemoryFiles.slice(0, 12).map((file, index) => (
+                        <p key={`${file.name}-${file.lastModified}-${index}`} className="truncate text-[10px] text-rose-200/70">
+                          {file.name}
+                        </p>
+                      ))}
+                      {selectedMemoryFiles.length > 12 && (
+                        <p className="text-[10px] text-rose-400/60">+ {selectedMemoryFiles.length - 12} more files</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {isUploadingMem && memoryUploadProgress.total > 0 && (
+                  <div className="mt-3">
+                    <div className="h-2 rounded-full bg-rose-950 overflow-hidden">
+                      <div
+                        className="h-full bg-rose-500 transition-all duration-300"
+                        style={{ width: `${(memoryUploadProgress.completed / memoryUploadProgress.total) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-rose-300/70 mt-1 text-center">
+                      Uploading memories… {memoryUploadProgress.completed} / {memoryUploadProgress.total}
+                    </p>
                   </div>
                 )}
               </div>
 
               <div>
-                <label className="block text-rose-300 mb-1 font-medium">Memory Title</label>
+                <label className="block text-rose-300 mb-1 font-medium">Memory Title <span className="text-rose-400/50">(optional for bulk upload)</span></label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. Sunset Walk at Beach"
+                  placeholder="e.g. Goa Trip — leave blank to use file names"
                   value={newMem.title}
                   onChange={(e) => setNewMem({ ...newMem, title: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-velvet-950 border border-rose-900/40 text-white placeholder-rose-400/40 focus:outline-none focus:border-rose-500"
                 />
+                <p className="text-[10px] text-rose-400/50 mt-1">With multiple files, the filename is added to this title so every memory stays unique.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -367,7 +468,7 @@ export const AdminDashboard = () => {
                 <label className="block text-rose-300 mb-1 font-medium">Story / Description</label>
                 <textarea
                   rows="3"
-                  placeholder="Tell the story behind this photo..."
+                  placeholder="Tell the story behind these memories..."
                   value={newMem.description}
                   onChange={(e) => setNewMem({ ...newMem, description: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-velvet-950 border border-rose-900/40 text-white focus:outline-none focus:border-rose-500"
@@ -376,9 +477,10 @@ export const AdminDashboard = () => {
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-md shadow-rose-600/30"
+                disabled={isUploadingMem || !selectedMemoryFiles.length}
+                className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold shadow-md shadow-rose-600/30"
               >
-                Save Memory
+                {isUploadingMem ? `Uploading ${memoryUploadProgress.completed}/${memoryUploadProgress.total}…` : `Save ${selectedMemoryFiles.length > 1 ? `${selectedMemoryFiles.length} Memories` : 'Memory'}`}
               </button>
             </form>
           </div>
