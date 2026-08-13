@@ -28,7 +28,14 @@ const MainApp = () => {
       {activeTab === 'voicenotes' && <VoiceNotesPage setActiveTab={setActiveTab} />}
       {activeTab === 'admin' && (
         <AdminAuthGate>
-          <AdminDashboard />
+          <div className="space-y-10 pb-12">
+            <AdminDashboard />
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="border-t border-rose-900/30 pt-10">
+                <WordSphereAdmin />
+              </div>
+            </div>
+          </div>
         </AdminAuthGate>
       )}
       {activeTab === 'word-sphere-admin' && (
