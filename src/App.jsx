@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CoupleProvider } from './context/CoupleContext';
 import { Navbar } from './components/Navbar';
+import { AdminAuthGate } from './components/AdminAuthGate';
 import { LandingPage } from './pages/LandingPage';
 import { HallOfMemories } from './pages/HallOfMemories';
 import { ActivityGenerator } from './pages/ActivityGenerator';
@@ -25,14 +26,22 @@ const MainApp = () => {
       {activeTab === 'memories' && <HallOfMemories setActiveTab={setActiveTab} />}
       {activeTab === 'activities' && <ActivityGenerator />}
       {activeTab === 'voicenotes' && <VoiceNotesPage setActiveTab={setActiveTab} />}
-      {activeTab === 'admin' && <AdminDashboard />}
-      {activeTab === 'word-sphere-admin' && <WordSphereAdmin />}
+      {activeTab === 'admin' && (
+        <AdminAuthGate>
+          <AdminDashboard />
+        </AdminAuthGate>
+      )}
+      {activeTab === 'word-sphere-admin' && (
+        <AdminAuthGate>
+          <WordSphereAdmin />
+        </AdminAuthGate>
+      )}
     </main>
     <footer className="relative z-10 border-t border-rose-900/30 bg-velvet-950/90 py-6 sm:py-8 text-center text-xs text-rose-300/60">
       <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center space-x-2"><Heart className="w-4 h-4 text-rose-500 fill-rose-500" /><span className="font-serif text-sm font-semibold text-rose-200">4EVER URS</span><span>— Made with love</span></div>
         <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 text-[11px] sm:text-xs">
-          <button onClick={() => setActiveTab('home')} className="hover:text-rose-200">Home</button><button onClick={() => setActiveTab('memories')} className="hover:text-rose-200">Memories</button><button onClick={() => setActiveTab('activities')} className="hover:text-rose-200">Date Generator</button><button onClick={() => setActiveTab('voicenotes')} className="hover:text-rose-200">Voice Notes</button><button onClick={() => setActiveTab('admin')} className="hover:text-rose-200">Admin</button><button onClick={() => setActiveTab('word-sphere-admin')} className="hover:text-rose-200">Word Sphere</button>
+          <button onClick={() => setActiveTab('home')} className="hover:text-rose-200">Home</button><button onClick={() => setActiveTab('memories')} className="hover:text-rose-200">Memories</button><button onClick={() => setActiveTab('activities')} className="hover:text-white">Date Generator</button><button onClick={() => setActiveTab('voicenotes')} className="hover:text-rose-200">Voice Notes</button><button onClick={() => setActiveTab('admin')} className="hover:text-rose-200">Admin</button><button onClick={() => setActiveTab('word-sphere-admin')} className="hover:text-rose-200">Word Sphere</button>
         </div>
       </div>
     </footer>
