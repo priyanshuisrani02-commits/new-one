@@ -43,6 +43,7 @@ export const AdminDashboard = () => {
   const [recordedAudioUrl, setRecordedAudioUrl] = useState('');
   const mediaRecorderRef = useRef(null);
   const recordingChunksRef = useRef([]);
+  const recordingStartedAtRef = useRef(0);
   const [memoryUploadProgress, setMemoryUploadProgress] = useState({ completed: 0, total: 0 });
   const [selectedMemoryFiles, setSelectedMemoryFiles] = useState([]);
 
@@ -185,6 +186,7 @@ export const AdminDashboard = () => {
         const blobType = recorder.mimeType || 'audio/webm';
         const extension = blobType.includes('mp4') ? 'm4a' : blobType.includes('ogg') ? 'ogg' : 'webm';
         const blob = new Blob(recordingChunksRef.current, { type: blobType });
+        const elapsedSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000));
         const localUrl = URL.createObjectURL(blob);
         setRecordedAudioUrl(localUrl);
         setIsUploadingAudio(true);
@@ -196,7 +198,7 @@ export const AdminDashboard = () => {
             ...prev,
             audio_url: url,
             title: prev.title || 'Recorded voice note',
-            duration: formatRecordingTime(recordingSeconds)
+            duration: formatRecordingTime(elapsedSeconds)
           }));
         } catch (err) {
           alert('Could not save the recording: ' + err.message);
@@ -208,6 +210,7 @@ export const AdminDashboard = () => {
       };
 
       mediaRecorderRef.current = recorder;
+      recordingStartedAtRef.current = Date.now();
       recorder.start();
       setIsRecordingAudio(true);
     } catch (err) {
