@@ -54,9 +54,9 @@ export const JournalPage = () => {
 
   const save = async (event) => {
     event.preventDefault();
-    if (!form.title.trim() || !form.content.trim()) return;
+    if (!form.content.trim()) { setError('Please write something on this page before saving.'); return; }
     setSaving(true); setError('');
-    const payload = { title: form.title.trim(), content: form.content.trim(), entry_date: form.entry_date, mood: form.mood, mood_emoji: form.mood_emoji, author: form.author || 'both', favorite: Boolean(form.favorite) };
+    const payload = { title: form.title.trim() || 'A little memory', content: form.content.trim(), entry_date: form.entry_date, mood: form.mood, mood_emoji: form.mood_emoji, author: form.author || 'both', favorite: Boolean(form.favorite) };
     const result = form.id
       ? await supabase.from('journal_entries').update(payload).eq('id', form.id).select('*').single()
       : await supabase.from('journal_entries').insert(payload).select('*').single();
@@ -161,14 +161,14 @@ export const JournalPage = () => {
 
       {editorOpen && (
         <div className="fixed inset-0 z-50 bg-velvet-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-6">
-          <div className="min-h-full flex items-center justify-center">
+          <div className="min-h-full flex items-center justify-center py-4">
             <form onSubmit={save} className="w-full max-w-2xl glass-panel rounded-[2rem] p-5 sm:p-8 border border-rose-500/25 shadow-2xl">
               <div className="flex items-start justify-between mb-6">
                 <div><div className="text-xs uppercase tracking-[.2em] text-rose-400">A page from our story</div><h2 className="font-serif text-3xl text-white mt-1">{form.id ? 'Edit entry' : 'Write a new entry'}</h2></div>
                 <button type="button" onClick={() => setEditorOpen(false)} className="p-2 rounded-full bg-rose-950/70 text-rose-200"><X /></button>
               </div>
               <div className="space-y-4">
-                <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Give this moment a title..." className="w-full rounded-2xl bg-velvet-950 border border-rose-900/40 p-4 text-lg text-white font-serif outline-none focus:border-rose-500/50" />
+                <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Give this moment a title... (optional)" className="w-full rounded-2xl bg-velvet-950 border border-rose-900/40 p-4 text-lg text-white font-serif outline-none focus:border-rose-500/50" />
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <label className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Date</span><input type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} className="w-full bg-transparent text-sm text-white outline-none" /></label>
                   <label className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Written by</span><select value={form.author || 'both'} onChange={(e)=>setForm({...form,author:e.target.value})} className="w-full bg-transparent text-sm text-white outline-none"><option value="his" className="bg-[#17050c]">Him</option><option value="her" className="bg-[#17050c]">Her</option><option value="both" className="bg-[#17050c]">Both of us</option></select></label><div className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Feeling</span><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{MOODS.map((mood) => <button type="button" key={mood.emoji} title={mood.label} onClick={() => setForm({ ...form, mood: mood.label, mood_emoji: mood.emoji })} className={`shrink-0 text-2xl p-1 rounded-xl ${form.mood_emoji === mood.emoji ? 'bg-rose-900/70 ring-1 ring-rose-500/50' : ''}`}>{mood.emoji}</button>)}</div></div>
