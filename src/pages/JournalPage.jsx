@@ -15,7 +15,8 @@ const MOODS = [
   { emoji: '💌', label: 'Missing you' },
 ];
 
-const EMPTY = { title: '', content: '', entry_date: new Date().toISOString().slice(0, 10), mood: 'In love', mood_emoji: '🥰', favorite: false };
+const EMOJIS = ['❤️','🥰','🫶','😘','😍','😂','🥹','😭','✨','🌙','💌','💋','💕','💗','💖','💞','💓','💫','🌹','🌸','☀️','🌧️','⭐','🦋','🍓','☕','🎀','🎵','📸','✈️','🏠','🥳','🤭','😌','😏','😊','🙈','💭','🫂','🤍','🩷','💐','🍰','🎂','🎁','🌎'];
+const EMPTY = { title: '', content: '', entry_date: new Date().toISOString().slice(0, 10), mood: 'In love', mood_emoji: '🥰', author: 'both', favorite: false };
 
 export const JournalPage = () => {
   const [entries, setEntries] = useState([]);
@@ -25,6 +26,8 @@ export const JournalPage = () => {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [bookOpen, setBookOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -51,7 +54,7 @@ export const JournalPage = () => {
     event.preventDefault();
     if (!form.title.trim() || !form.content.trim()) return;
     setSaving(true); setError('');
-    const payload = { title: form.title.trim(), content: form.content.trim(), entry_date: form.entry_date, mood: form.mood, mood_emoji: form.mood_emoji, favorite: Boolean(form.favorite) };
+    const payload = { title: form.title.trim(), content: form.content.trim(), entry_date: form.entry_date, mood: form.mood, mood_emoji: form.mood_emoji, author: form.author || 'both', favorite: Boolean(form.favorite) };
     const result = form.id
       ? await supabase.from('journal_entries').update(payload).eq('id', form.id).select('*').single()
       : await supabase.from('journal_entries').insert(payload).select('*').single();
@@ -71,19 +74,21 @@ export const JournalPage = () => {
     if (updateError) setError(updateError.message); else await loadEntries();
   };
 
+  if (!bookOpen) return (<div className="min-h-[calc(100vh-5rem)] flex items-center justify-center px-5 py-16 relative overflow-hidden"><style>{`@keyframes bookHover { 0%,100%{transform:translateY(0) rotateY(0deg)} 50%{transform:translateY(-8px) rotateY(-2deg)}} .book-cover{animation:bookHover 5s ease-in-out infinite} @media (prefers-reduced-motion:reduce){.book-cover{animation:none}}`}</style><div className="absolute inset-0 pointer-events-none"><div className="absolute w-96 h-96 rounded-full bg-rose-600/10 blur-3xl top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"/><Heart className="absolute top-24 left-[12%] text-rose-400/10 fill-rose-400/5 w-12 h-12"/><Sparkles className="absolute top-32 right-[14%] text-rose-300/15 w-8 h-8"/></div><div className="relative z-10 text-center"><p className="text-[10px] uppercase tracking-[.4em] text-rose-300/60 mb-5">A story written by two</p><button onClick={()=>setBookOpen(true)} className="book-cover group relative block mx-auto w-[min(82vw,430px)] aspect-[1.38] rounded-r-[1.4rem] rounded-l-lg bg-gradient-to-br from-rose-950 via-[#3b0d1b] to-[#17050c] border border-rose-300/20 shadow-[0_35px_80px_rgba(0,0,0,.65)]"><div className="absolute left-0 top-0 bottom-0 w-[7%] rounded-l-lg bg-gradient-to-r from-[#16040a] to-rose-900/40 border-r border-rose-300/10"/><div className="absolute inset-[9%] border border-rose-300/15 rounded-r-[1rem] flex flex-col items-center justify-center"><BookHeart className="w-12 h-12 text-rose-300/80 mb-4"/><span className="font-serif text-4xl sm:text-5xl italic text-rose-100">Our Journal</span><span className="mt-3 text-[9px] uppercase tracking-[.35em] text-rose-300/50">little pieces of us</span><span className="mt-8 px-4 py-2 rounded-full border border-rose-300/15 bg-black/15 text-[10px] uppercase tracking-[.2em] text-rose-200/60 group-hover:text-white">Open the book</span></div><Heart className="absolute bottom-[9%] right-[9%] w-5 h-5 text-rose-300/40 fill-rose-300/20"/></button><p className="mt-7 text-sm text-rose-100/40 italic">Every page keeps a little piece of us.</p></div></div>);
+
   return (
-    <div className="min-h-[calc(100vh-5rem)] pb-20">
-      <section className="relative overflow-hidden px-4 pt-12 sm:pt-16 pb-10">
+    <div className="journal-book min-h-[calc(100vh-5rem)] pb-20">
+      <style>{`@keyframes pageTurn {0%{opacity:0;transform:perspective(1200px) rotateY(-12deg) translateX(-20px)}100%{opacity:1;transform:none}} .journal-book{animation:pageTurn .75s cubic-bezier(.2,.8,.2,1) both} @media (prefers-reduced-motion:reduce){.journal-book{animation:none}}`}</style><section className="relative overflow-hidden px-4 pt-8 sm:pt-12 pb-8">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute w-72 h-72 rounded-full bg-rose-600/10 blur-3xl -top-20 left-1/2 -translate-x-1/2" />
           <Heart className="absolute top-16 left-[12%] w-7 h-7 text-rose-400/20 fill-rose-400/10 rotate-12" />
           <Sparkles className="absolute top-28 right-[13%] w-6 h-6 text-rose-300/20" />
         </div>
-        <div className="relative max-w-4xl mx-auto text-center">
+        <div className="relative max-w-4xl mx-auto text-center"><button onClick={()=>setBookOpen(false)} className="absolute left-0 top-0 text-xs text-rose-300/60 hover:text-white">← Close book</button>
           <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/20 bg-rose-950/40 px-4 py-2 text-xs text-rose-300 mb-5">
             <BookHeart className="w-4 h-4" /> Little pieces of us
           </div>
-          <h1 className="font-serif text-4xl sm:text-6xl font-bold text-white">Our Journal</h1>
+          <BookHeart className="mx-auto w-8 h-8 text-rose-300/70 mb-3"/><h1 className="font-serif text-4xl sm:text-6xl italic text-white">Our Journal</h1>
           <p className="mt-4 text-sm sm:text-base text-rose-200/65 max-w-xl mx-auto leading-relaxed">The thoughts, tiny moments, inside jokes and feelings we never want to forget. ❤️</p>
           <button onClick={openNew} className="mt-7 inline-flex items-center gap-2 rounded-full bg-rose-600 hover:bg-rose-500 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-rose-950/40 transition-all">
             <Plus className="w-4 h-4" /> Write a memory
@@ -92,7 +97,7 @@ export const JournalPage = () => {
       </section>
 
       <section className="max-w-5xl mx-auto px-4 sm:px-6">
-        <div className="glass-panel rounded-3xl p-3 sm:p-4 mb-8 flex flex-col sm:flex-row gap-3">
+        <div className="glass-panel rounded-3xl p-3 sm:p-4 mb-8 flex flex-col sm:flex-row gap-3"><button onClick={openNew} className="sm:order-last shrink-0 rounded-2xl bg-rose-600 px-4 py-3 text-xs font-semibold text-white"><Plus className="inline w-4 h-4 mr-1"/> New page</button>
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-400/60" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search our story..." className="w-full rounded-2xl bg-velvet-950/70 border border-rose-900/40 py-3 pl-10 pr-4 text-sm text-white outline-none focus:border-rose-500/50" />
@@ -124,7 +129,7 @@ export const JournalPage = () => {
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[.16em] text-rose-300/60"><CalendarDays className="w-3.5 h-3.5" />{new Date(entry.entry_date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                       <button onClick={() => toggleFavorite(entry)} className="p-1.5 rounded-full" aria-label="Favorite">{entry.favorite ? <Star className="w-4 h-4 text-amber-300 fill-amber-300" /> : <Star className="w-4 h-4 text-rose-300/40" />}</button>
                     </div>
-                    <div className="flex items-center gap-2 mt-4"><span className="text-2xl">{entry.mood_emoji || '❤️'}</span><span className="text-xs text-rose-300/60">{entry.mood || 'A little feeling'}</span></div>
+                    <div className="flex items-center justify-between gap-3 mt-4"><div><span className="text-2xl">{entry.mood_emoji || '❤️'}</span><span className="text-xs text-rose-300/60 ml-2">{entry.mood || 'A little feeling'}</span></div><span className="text-xs text-rose-300/50">{entry.author === 'his' ? '🖤 Him' : entry.author === 'her' ? '💗 Her' : '💞 Both'}</span></div>
                     <h2 className="font-serif text-2xl font-semibold text-white mt-2">{entry.title}</h2>
                     <p className="mt-3 text-sm leading-7 text-rose-100/75 whitespace-pre-wrap break-words">{entry.content}</p>
                     <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-rose-900/30">
@@ -149,11 +154,11 @@ export const JournalPage = () => {
               </div>
               <div className="space-y-4">
                 <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Give this moment a title..." className="w-full rounded-2xl bg-velvet-950 border border-rose-900/40 p-4 text-lg text-white font-serif outline-none focus:border-rose-500/50" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <label className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Date</span><input type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} className="w-full bg-transparent text-sm text-white outline-none" /></label>
-                  <div className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Feeling</span><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{MOODS.map((mood) => <button type="button" key={mood.emoji} title={mood.label} onClick={() => setForm({ ...form, mood: mood.label, mood_emoji: mood.emoji })} className={`shrink-0 text-2xl p-1 rounded-xl ${form.mood_emoji === mood.emoji ? 'bg-rose-900/70 ring-1 ring-rose-500/50' : ''}`}>{mood.emoji}</button>)}</div></div>
+                  <label className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Written by</span><select value={form.author || 'both'} onChange={(e)=>setForm({...form,author:e.target.value})} className="w-full bg-transparent text-sm text-white outline-none"><option value="his" className="bg-[#17050c]">Him</option><option value="her" className="bg-[#17050c]">Her</option><option value="both" className="bg-[#17050c]">Both of us</option></select></label><div className="rounded-2xl bg-velvet-950 border border-rose-900/40 p-3"><span className="block text-[10px] uppercase tracking-wider text-rose-300/60 mb-2">Feeling</span><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{MOODS.map((mood) => <button type="button" key={mood.emoji} title={mood.label} onClick={() => setForm({ ...form, mood: mood.label, mood_emoji: mood.emoji })} className={`shrink-0 text-2xl p-1 rounded-xl ${form.mood_emoji === mood.emoji ? 'bg-rose-900/70 ring-1 ring-rose-500/50' : ''}`}>{mood.emoji}</button>)}</div></div>
                 </div>
-                <textarea required rows="10" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Write whatever you want to remember... emojis are welcome ❤️✨" className="w-full resize-none rounded-2xl bg-velvet-950 border border-rose-900/40 p-4 text-sm leading-7 text-white outline-none focus:border-rose-500/50" />
+                <div className="relative"><textarea required rows="10" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="Write whatever you want to remember... emojis are welcome ❤️✨" className="w-full resize-none rounded-2xl bg-velvet-950 border border-rose-900/40 p-4 pr-14 text-sm leading-7 text-white outline-none focus:border-rose-500/50" /><button type="button" onClick={()=>setEmojiOpen(!emojiOpen)} aria-label="Open emoji picker" title="Add emoji" className="absolute right-3 top-3 w-9 h-9 rounded-xl bg-rose-900/60 border border-rose-700/40 text-xl hover:bg-rose-800/70"><Smile className="w-5 h-5 mx-auto text-rose-200"/></button></div>{emojiOpen && <div className="rounded-2xl border border-rose-800/40 bg-[#17050c] p-3 shadow-2xl"><div className="grid grid-cols-8 sm:grid-cols-12 gap-1.5 max-h-44 overflow-y-auto">{EMOJIS.map((emoji,index)=><button type="button" key={index} onClick={()=>setForm({...form,content:form.content+emoji})} className="text-xl sm:text-2xl p-1.5 rounded-lg hover:bg-rose-900/60 active:scale-90 transition-transform">{emoji}</button>)}</div></div>}
                 <label className="flex items-center gap-3 text-sm text-rose-200/80"><input type="checkbox" checked={form.favorite} onChange={(e) => setForm({ ...form, favorite: e.target.checked })} className="accent-rose-600 w-4 h-4" /><Star className="w-4 h-4 text-amber-300" /> Keep this one close to our hearts</label>
                 {error && <p className="text-sm text-rose-300">{error}</p>}
                 <button disabled={saving} className="w-full rounded-2xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 py-3.5 text-sm font-semibold text-white"><Save className="inline w-4 h-4 mr-2" />{saving ? 'Saving...' : 'Save to our story ❤️'}</button>
