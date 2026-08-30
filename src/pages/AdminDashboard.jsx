@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Lock, ShieldCheck, Plus, Trash2, Image, Video, Mic, Dices, Save, LogOut, Settings, Upload, CheckCircle2, FileAudio, FileImage, FolderPlus, Tag, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Lock, ShieldCheck, Plus, Trash2, Image, Video, Mic, StopCircle, Dices, Save, LogOut, Settings, Upload, CheckCircle2, FileAudio, FileImage, FolderPlus, Tag, X } from 'lucide-react';
 import { useCouple } from '../context/CoupleContext';
 import { BUCKETS } from '../lib/supabaseClient';
 
@@ -38,6 +38,11 @@ export const AdminDashboard = () => {
   // Loading States
   const [isUploadingMem, setIsUploadingMem] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState('');
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
   const [memoryUploadProgress, setMemoryUploadProgress] = useState({ completed: 0, total: 0 });
   const [selectedMemoryFiles, setSelectedMemoryFiles] = useState([]);
 
@@ -114,7 +119,7 @@ export const AdminDashboard = () => {
     if (input) input.value = '';
   };
 
-  // Local PC File Upload for Voice Notes
+  // Audio can come from the device file picker (including files shared/saved from other apps).
   const handleAudioFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -127,11 +132,102 @@ export const AdminDashboard = () => {
         audio_url: url,
         title: prev.title || file.name.split('.')[0]
       }));
+      setRecordedAudioUrl('');
     } catch (err) {
-      alert('Error loading audio file from PC: ' + err.message);
+      alert('Error loading audio file: ' + err.message);
     } finally {
       setIsUploadingAudio(false);
+      e.target.value = '';
     }
+  };
+
+  useEffect(() => {
+    if (!isRecordingAudio) return;
+    const timer = window.setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [isRecordingAudio]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+      if (recordedAudioUrl) URL.revokeObjectURL(recordedAudioUrl);
+    };
+  }, [recordedAudioUrl]);
+
+  const formatRecordingTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+  };
+
+  const startAudioRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      alert('Voice recording is not supported by this browser. Please use the audio file option instead.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+      const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+      recordingChunksRef.current = [];
+      setRecordingSeconds(0);
+      setRecordedAudioUrl('');
+      setNewNote((prev) => ({ ...prev, audio_url: '' }));
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordingChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blobType = recorder.mimeType || 'audio/webm';
+        const extension = blobType.includes('mp4') ? 'm4a' : blobType.includes('ogg') ? 'ogg' : 'webm';
+        const blob = new Blob(recordingChunksRef.current, { type: blobType });
+        const localUrl = URL.createObjectURL(blob);
+        setRecordedAudioUrl(localUrl);
+        setIsUploadingAudio(true);
+
+        try {
+          const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type: blobType });
+          const url = await uploadFileFromPC(file, BUCKETS.VOICE_NOTES);
+          setNewNote((prev) => ({
+            ...prev,
+            audio_url: url,
+            title: prev.title || 'Recorded voice note',
+            duration: formatRecordingTime(recordingSeconds)
+          }));
+        } catch (err) {
+          alert('Could not save the recording: ' + err.message);
+          setRecordedAudioUrl('');
+        } finally {
+          setIsUploadingAudio(false);
+          recordingChunksRef.current = [];
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecordingAudio(true);
+    } catch (err) {
+      alert('Microphone access was not available. Please allow microphone permission and try again.');
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      setIsRecordingAudio(false);
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const clearRecordedAudio = () => {
+    if (isRecordingAudio) stopAudioRecording();
+    if (recordedAudioUrl) URL.revokeObjectURL(recordedAudioUrl);
+    setRecordedAudioUrl('');
+    setRecordingSeconds(0);
+    setNewNote((prev) => ({ ...prev, audio_url: '', duration: '0:30' }));
   };
 
   const handleAddMemorySubmit = async (e) => {
@@ -597,30 +693,61 @@ export const AdminDashboard = () => {
           
           <div className="lg:col-span-1 glass-panel p-6 rounded-3xl border border-rose-500/30">
             <h3 className="font-serif text-xl font-bold text-white mb-4 flex items-center space-x-2">
-              <Upload className="w-5 h-5 text-rose-400" />
-              <span>Add Voice Note from PC</span>
+              <Mic className="w-5 h-5 text-rose-400" />
+              <span>Add a Voice Note</span>
             </h3>
 
             <form onSubmit={handleAddVoiceNoteSubmit} className="space-y-4 text-xs">
               
-              <div className="p-4 rounded-2xl bg-velvet-950/80 border-2 border-dashed border-rose-800/60 text-center hover:border-rose-500 transition-colors">
-                <input
-                  type="file"
-                  id="audioFileInput"
-                  accept="audio/*"
-                  onChange={handleAudioFileUpload}
-                  className="hidden"
-                />
-                <label htmlFor="audioFileInput" className="cursor-pointer flex flex-col items-center justify-center">
-                  <FileAudio className="w-8 h-8 text-rose-400 mb-2" />
-                  <span className="text-rose-200 font-semibold text-xs">
-                    {isUploadingAudio ? 'Loading Audio...' : 'Choose Audio Clip from PC'}
-                  </span>
-                  <span className="text-[10px] text-rose-400/60 mt-1">Supports MP3, WAV, M4A, AAC</span>
-                </label>
+              <div className="space-y-3">
+                <div className="p-4 rounded-2xl bg-velvet-950/80 border-2 border-dashed border-rose-800/60 text-center hover:border-rose-500 transition-colors">
+                  <input
+                    type="file"
+                    id="audioFileInput"
+                    accept="audio/*"
+                    onChange={handleAudioFileUpload}
+                    className="hidden"
+                  />
+                  <label htmlFor="audioFileInput" className="cursor-pointer flex flex-col items-center justify-center">
+                    <FileAudio className="w-8 h-8 text-rose-400 mb-2" />
+                    <span className="text-rose-200 font-semibold text-xs">
+                      {isUploadingAudio ? 'Saving audio...' : 'Choose Audio from Device'}
+                    </span>
+                    <span className="text-[10px] text-rose-400/60 mt-1">Works with Files/Downloads and audio shared or saved from other apps · MP3, WAV, M4A, AAC, etc.</span>
+                  </label>
+                </div>
 
-                {newNote.audio_url && (
-                  <div className="mt-3 p-2 bg-rose-900/40 rounded-xl text-[11px] text-emerald-300 font-medium flex items-center justify-center space-x-1">
+                <div className="relative flex items-center gap-3 py-1">
+                  <div className="h-px bg-rose-900/40 flex-1" />
+                  <span className="text-[10px] uppercase tracking-[.2em] text-rose-400/50">or record here</span>
+                  <div className="h-px bg-rose-900/40 flex-1" />
+                </div>
+
+                {!isRecordingAudio ? (
+                  <button type="button" onClick={startAudioRecording} disabled={isUploadingAudio} className="w-full py-4 rounded-2xl bg-rose-950/70 border border-rose-700/50 text-rose-100 font-semibold flex items-center justify-center gap-2 hover:bg-rose-900/70 transition-all">
+                    <Mic className="w-5 h-5 text-rose-300" />
+                    Record a Voice Note
+                  </button>
+                ) : (
+                  <button type="button" onClick={stopAudioRecording} className="w-full py-4 rounded-2xl bg-rose-600 text-white font-semibold flex items-center justify-center gap-3 animate-pulse">
+                    <StopCircle className="w-5 h-5" />
+                    Stop & Save · {formatRecordingTime(recordingSeconds)}
+                  </button>
+                )}
+
+                {recordedAudioUrl && (
+                  <div className="p-3 rounded-2xl bg-rose-950/50 border border-rose-800/40">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[10px] uppercase tracking-wider text-rose-300/60">Recording preview</span>
+                      <button type="button" onClick={clearRecordedAudio} className="text-[10px] text-rose-300 hover:text-white">Record again</button>
+                    </div>
+                    <audio controls src={recordedAudioUrl} className="w-full h-9" />
+                    {newNote.audio_url && <p className="text-[10px] text-emerald-300 mt-2 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Saved to voice notes</p>}
+                  </div>
+                )}
+
+                {newNote.audio_url && !recordedAudioUrl && (
+                  <div className="p-2 bg-rose-900/40 rounded-xl text-[11px] text-emerald-300 font-medium flex items-center justify-center space-x-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Audio Clip Attached!</span>
                   </div>
