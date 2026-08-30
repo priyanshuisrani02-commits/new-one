@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Sparkles, Image as ImageIcon, Dices, Mic, Lock, Menu, X, ShieldCheck } from 'lucide-react';
+import { Heart, Sparkles, Image as ImageIcon, Dices, Mic, Lock, Menu, X, ShieldCheck, BookHeart } from 'lucide-react';
 import { useCouple, playMelodiousChime } from '../context/CoupleContext';
 
 export const Navbar = ({ activeTab, setActiveTab }) => {
@@ -16,8 +16,7 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
         setHerTime(new Intl.DateTimeFormat('en-US', { timeZone: coupleSettings.her_timezone || 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: true }).format(now));
       } catch {
         const fallback = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setHisTime(fallback);
-        setHerTime(fallback);
+        setHisTime(fallback); setHerTime(fallback);
       }
     };
     updateClocks();
@@ -28,6 +27,7 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
   const navItems = [
     { id: 'home', label: 'Home', icon: Heart },
     { id: 'memories', label: 'Hall of Memories', icon: ImageIcon },
+    { id: 'journal', label: 'Journal', icon: BookHeart },
     { id: 'activities', label: 'Date Generator', icon: Dices },
     { id: 'voicenotes', label: 'Voice of Us', icon: Mic },
     { id: 'admin', label: 'Admin Panel', icon: Lock },
