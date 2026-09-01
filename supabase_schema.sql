@@ -79,6 +79,20 @@ CREATE TRIGGER couple_settings_updated_at
 BEFORE UPDATE ON public.couple_settings
 FOR EACH ROW EXECUTE FUNCTION public.set_couple_settings_updated_at();
 
+CREATE TABLE IF NOT EXISTS public.journal_entries (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title TEXT NOT NULL DEFAULT 'A little memory',
+    content TEXT NOT NULL,
+    entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    mood TEXT DEFAULT 'In love',
+    mood_emoji TEXT DEFAULT '🥰',
+    author TEXT NOT NULL DEFAULT 'both' CHECK (author IN ('his', 'her', 'both')),
+    favorite BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
+
 -- ==========================================
 -- RLS
 -- ==========================================
@@ -88,6 +102,7 @@ ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.voice_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.couple_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.journal_entries ENABLE ROW LEVEL SECURITY;
 
 -- Remove the old overly-permissive policies before recreating them.
 DROP POLICY IF EXISTS "Public Categories Read Access" ON public.categories;
@@ -127,9 +142,26 @@ ON public.couple_settings FOR SELECT
 TO anon, authenticated
 USING (true);
 
--- Admin authorization is based on Supabase Auth app_metadata.
--- raw_app_meta_data is not user-editable and is therefore appropriate for authorization.
--- Set {"role":"admin"} in the admin user's app_metadata after creating the user.
+-- Admin authorization is checked against the server-side raw_app_meta_data in auth.users.
+-- This avoids relying on a stale JWT app_metadata claim after an admin role is granted.
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth
+AS $
+  SELECT EXISTS (
+    SELECT 1
+    FROM auth.users
+    WHERE id = auth.uid()
+      AND COALESCE(raw_app_meta_data->>'role', '') = 'admin'
+  );
+$;
+
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
+
 
 CREATE POLICY "Admin Categories Insert"
 ON public.categories FOR INSERT
@@ -210,6 +242,32 @@ CREATE POLICY "Admin Couple Settings Delete"
 ON public.couple_settings FOR DELETE
 TO authenticated
 USING ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+DROP POLICY IF EXISTS "Public Journal Read Access" ON public.journal_entries;
+DROP POLICY IF EXISTS "Admin Journal Insert" ON public.journal_entries;
+DROP POLICY IF EXISTS "Admin Journal Update" ON public.journal_entries;
+DROP POLICY IF EXISTS "Admin Journal Delete" ON public.journal_entries;
+
+CREATE POLICY "Public Journal Read Access"
+ON public.journal_entries FOR SELECT
+TO anon, authenticated
+USING (true);
+
+CREATE POLICY "Admin Journal Insert"
+ON public.journal_entries FOR INSERT
+TO authenticated
+WITH CHECK ((select public.is_admin()));
+
+CREATE POLICY "Admin Journal Update"
+ON public.journal_entries FOR UPDATE
+TO authenticated
+USING ((select public.is_admin()))
+WITH CHECK ((select public.is_admin()));
+
+CREATE POLICY "Admin Journal Delete"
+ON public.journal_entries FOR DELETE
+TO authenticated
+USING ((select public.is_admin()));
 
 -- ==========================================
 -- STORAGE
