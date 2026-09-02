@@ -29,6 +29,7 @@ export const JournalPage = () => {
   const [bookOpen, setBookOpen] = useState(false);
   const [openingBook, setOpeningBook] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -50,7 +51,8 @@ export const JournalPage = () => {
 
   const openNew = () => { setForm(EMPTY); setError(''); setEmojiOpen(false); setEditorOpen(true); };
   const startOpeningBook = () => { if (openingBook) return; setOpeningBook(true); window.setTimeout(() => setBookOpen(true), 2800); };
-  const openEdit = (entry) => { setForm({ ...entry }); setError(''); setEditorOpen(true); };
+  const openEdit = (entry) => { setForm({ ...entry }); setError(''); setEmojiOpen(false); setSelectedEntry(null); setEditorOpen(true); };
+  const openEntry = (entry) => { setSelectedEntry(entry); setError(''); };
 
   const save = async (event) => {
     event.preventDefault();
@@ -139,25 +141,53 @@ export const JournalPage = () => {
               {filtered.map((entry, index) => (
                 <article key={entry.id} className={`relative sm:w-[calc(50%-2rem)] ${index % 2 ? 'sm:ml-auto' : ''}`}>
                   <div className="absolute left-[0.95rem] sm:left-auto sm:right-[-2.55rem] top-6 w-3 h-3 rounded-full bg-rose-500 ring-4 ring-velvet-950 shadow-lg shadow-rose-500/40" style={index % 2 ? { left: '-2.55rem' } : {}} />
-                  <div className="glass-panel rounded-3xl p-5 sm:p-6 border border-rose-900/30 hover:border-rose-500/30 transition-all">
+                  <button type="button" onClick={() => openEntry(entry)} className="w-full text-left glass-panel rounded-3xl p-5 sm:p-6 border border-rose-900/30 hover:border-rose-500/40 hover:-translate-y-0.5 transition-all cursor-pointer group">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[.16em] text-rose-300/60"><CalendarDays className="w-3.5 h-3.5" />{new Date(entry.entry_date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                      <button onClick={() => toggleFavorite(entry)} className="p-1.5 rounded-full" aria-label="Favorite">{entry.favorite ? <Star className="w-4 h-4 text-amber-300 fill-amber-300" /> : <Star className="w-4 h-4 text-rose-300/40" />}</button>
+                      <span onClick={(e) => { e.stopPropagation(); toggleFavorite(entry); }} role="button" tabIndex={0} className="p-1.5 rounded-full" aria-label="Favorite">{entry.favorite ? <Star className="w-4 h-4 text-amber-300 fill-amber-300" /> : <Star className="w-4 h-4 text-rose-300/40" />}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 mt-4"><div><span className="text-2xl">{entry.mood_emoji || '❤️'}</span><span className="text-xs text-rose-300/60 ml-2">{entry.mood || 'A little feeling'}</span></div><span className="text-xs text-rose-300/50">{entry.author === 'his' ? '🖤 Him' : entry.author === 'her' ? '💗 Her' : '💞 Both'}</span></div>
-                    <h2 className="font-serif text-2xl font-semibold text-white mt-2">{entry.title}</h2>
-                    <p className="mt-3 text-sm leading-7 text-rose-100/75 whitespace-pre-wrap break-words">{entry.content}</p>
-                    <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-rose-900/30">
-                      <button onClick={() => openEdit(entry)} className="text-xs px-3 py-2 rounded-xl bg-rose-950/60 text-rose-200">Edit</button>
-                      <button onClick={() => remove(entry.id)} className="text-xs px-3 py-2 rounded-xl bg-rose-950/60 text-rose-300"><Trash2 className="w-3.5 h-3.5 inline mr-1" />Delete</button>
-                    </div>
-                  </div>
+                    <div className="flex items-center justify-between gap-3 mt-3"><div><span className="text-xl">{entry.mood_emoji || '❤️'}</span><span className="text-xs text-rose-300/60 ml-2">{entry.mood || 'A little feeling'}</span></div><span className="text-xs text-rose-300/50">{entry.author === 'his' ? '🖤 Him' : entry.author === 'her' ? '💗 Her' : '💞 Both'}</span></div>
+                    <h2 className="font-serif text-xl sm:text-2xl font-semibold text-white mt-2">{entry.title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-rose-100/65 line-clamp-3">{entry.content}</p>
+                    <span className="mt-3 inline-flex text-[10px] uppercase tracking-[.18em] text-rose-300/50 group-hover:text-rose-200 transition-colors">Open this page →</span>
+                  </button>
                 </article>
               ))}
             </div>
           </div>
         )}
       </section>
+
+      {selectedEntry && (
+        <div className="fixed inset-0 z-50 bg-velvet-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-8" onClick={() => setSelectedEntry(null)}>
+          <div className="min-h-full flex items-center justify-center py-6 sm:py-10">
+            <article onClick={(e) => e.stopPropagation()} className="relative w-full max-w-4xl min-h-[78vh] rounded-[2rem] sm:rounded-[2.5rem] border border-rose-300/15 bg-[#fff8ec] text-[#35151e] shadow-[0_35px_100px_rgba(0,0,0,.65)] overflow-hidden">
+              <div className="absolute inset-y-0 left-0 w-3 sm:w-5 bg-gradient-to-r from-[#9c6d4f] via-[#ead4b7] to-transparent opacity-80" />
+              <div className="absolute inset-0 pointer-events-none opacity-30" style={{backgroundImage:'repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(130,82,55,.16) 32px)'}} />
+              <button type="button" onClick={() => setSelectedEntry(null)} aria-label="Close entry" className="absolute right-4 top-4 z-10 w-10 h-10 rounded-full bg-[#5a1c2c]/10 text-[#5a1c2c] hover:bg-[#5a1c2c]/20"><X className="w-5 h-5 mx-auto" /></button>
+              <div className="relative z-10 px-7 py-10 sm:px-16 sm:py-14 md:px-20">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] uppercase tracking-[.2em] text-[#8b5362]">
+                  <span>{new Date(selectedEntry.entry_date + 'T12:00:00').toLocaleDateString(undefined, { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</span>
+                  <span>•</span>
+                  <span>{selectedEntry.author === 'his' ? '🖤 Him' : selectedEntry.author === 'her' ? '💗 Her' : '💞 Both of us'}</span>
+                  <span>•</span>
+                  <span>{selectedEntry.mood_emoji || '❤️'} {selectedEntry.mood || 'A little feeling'}</span>
+                </div>
+                <h2 className="mt-8 font-serif text-4xl sm:text-6xl italic leading-tight text-[#4a1724]">{selectedEntry.title}</h2>
+                <div className="mt-8 h-px bg-[#a86b73]/25" />
+                <p className="mt-9 whitespace-pre-wrap break-words font-serif text-lg sm:text-xl leading-[2] text-[#4a2630]">{selectedEntry.content}</p>
+                <div className="mt-12 pt-5 border-t border-[#a86b73]/20 flex flex-wrap items-center justify-between gap-3">
+                  <button type="button" onClick={() => toggleFavorite(selectedEntry)} className="inline-flex items-center gap-2 text-sm text-[#8b5362]">{selectedEntry.favorite ? <Star className="w-4 h-4 text-amber-500 fill-amber-500" /> : <Star className="w-4 h-4" />} {selectedEntry.favorite ? 'Close to our hearts' : 'Keep this one close'}</button>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => openEdit(selectedEntry)} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#5a1c2c]">Edit</button>
+                    <button type="button" onClick={() => { setSelectedEntry(null); remove(selectedEntry.id); }} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#8b5362]"><Trash2 className="w-3.5 h-3.5 inline mr-1" />Delete</button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      )}
 
       {editorOpen && (
         <div className="fixed inset-0 z-50 bg-velvet-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-6">
