@@ -164,7 +164,7 @@ export const JournalPage = () => {
             <article onClick={(e) => e.stopPropagation()} className="relative w-full max-w-4xl min-h-[78vh] rounded-[2rem] sm:rounded-[2.5rem] border border-rose-300/15 bg-[#fff8ec] text-[#35151e] shadow-[0_35px_100px_rgba(0,0,0,.65)] overflow-hidden">
               <div className="absolute inset-y-0 left-0 w-3 sm:w-5 bg-gradient-to-r from-[#9c6d4f] via-[#ead4b7] to-transparent opacity-80" />
               <div className="absolute inset-0 pointer-events-none opacity-30" style={{backgroundImage:'repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(130,82,55,.16) 32px)'}} />
-              <button type="button" onClick={() => setSelectedEntry(null)} aria-label="Close entry" className="absolute right-4 top-4 z-10 w-10 h-10 rounded-full bg-[#5a1c2c]/10 text-[#5a1c2c] hover:bg-[#5a1c2c]/20"><X className="w-5 h-5 mx-auto" /></button>
+              <button type="button" onClick={() => setSelectedEntry(null)} aria-label="Close entry" className="absolute right-4 top-4 z-20 w-10 h-10 rounded-full bg-[#5a1c2c]/10 text-[#5a1c2c] hover:bg-[#5a1c2c]/20 cursor-pointer"><X className="w-5 h-5 mx-auto" /></button>
               <div className="relative z-10 px-7 py-10 sm:px-16 sm:py-14 md:px-20">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] uppercase tracking-[.2em] text-[#8b5362]">
                   <span>{new Date(selectedEntry.entry_date + 'T12:00:00').toLocaleDateString(undefined, { weekday:'long', day:'numeric', month:'long', year:'numeric' })}</span>
