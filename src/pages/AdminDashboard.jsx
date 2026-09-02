@@ -46,6 +46,7 @@ export const AdminDashboard = () => {
   const recordingStartedAtRef = useRef(0);
   const [memoryUploadProgress, setMemoryUploadProgress] = useState({ completed: 0, total: 0 });
   const [selectedMemoryFiles, setSelectedMemoryFiles] = useState([]);
+  const [isMemoryDragActive, setIsMemoryDragActive] = useState(false);
 
   // Form States
   const [newMem, setNewMem] = useState({
@@ -96,8 +97,8 @@ export const AdminDashboard = () => {
   };
 
   // Local PC File Selection for Memories. Multiple files are uploaded when Save Memory is pressed.
-  const handleMemoryFileUpload = (e) => {
-    const files = Array.from(e.target.files || [])
+  const acceptMemoryFiles = (incomingFiles) => {
+    const files = Array.from(incomingFiles || [])
       .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
       .slice(0, 100);
 
@@ -111,6 +112,38 @@ export const AdminDashboard = () => {
       media_type: files.length === 1 && files[0].type.startsWith('video') ? 'video' : 'image',
       title: prev.title || (files.length === 1 ? files[0].name.replace(/\.[^/.]+$/, '') : '')
     }));
+  };
+
+  const handleMemoryFileUpload = (e) => {
+    acceptMemoryFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  const handleMemoryDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsMemoryDragActive(true);
+  };
+
+  const handleMemoryDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.currentTarget.contains(e.relatedTarget)) setIsMemoryDragActive(false);
+  };
+
+  const handleMemoryDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsMemoryDragActive(false);
+
+    const files = e.dataTransfer?.files;
+    if (files?.length) {
+      acceptMemoryFiles(files);
+      return;
+    }
+
+    alert('The dragged item was not provided as a file. In Discord, drag the actual image/file into this box, or download/save it first and drop it here.');
   };
 
   const clearMemoryFileSelection = () => {
@@ -452,7 +485,13 @@ export const AdminDashboard = () => {
 
             <form onSubmit={handleAddMemorySubmit} className="space-y-4 text-xs">
               
-              <div className="p-4 rounded-2xl bg-velvet-950/80 border-2 border-dashed border-rose-800/60 text-center hover:border-rose-500 transition-colors">
+              <div
+                onDragEnter={handleMemoryDragOver}
+                onDragOver={handleMemoryDragOver}
+                onDragLeave={handleMemoryDragLeave}
+                onDrop={handleMemoryDrop}
+                className={`p-4 rounded-2xl bg-velvet-950/80 border-2 border-dashed text-center transition-all ${isMemoryDragActive ? 'border-rose-400 bg-rose-950/70 scale-[1.01] shadow-lg shadow-rose-900/30' : 'border-rose-800/60 hover:border-rose-500'}`}
+              >
                 <input
                   type="file"
                   id="memoryFileInput"
@@ -464,9 +503,9 @@ export const AdminDashboard = () => {
                 <label htmlFor="memoryFileInput" className="cursor-pointer flex flex-col items-center justify-center">
                   <FileImage className="w-8 h-8 text-rose-400 mb-2" />
                   <span className="text-rose-200 font-semibold text-xs">
-                    {isUploadingMem ? `Uploading ${memoryUploadProgress.completed}/${memoryUploadProgress.total}…` : 'Choose Photos or Videos'}
+                    {isUploadingMem ? `Uploading ${memoryUploadProgress.completed}/${memoryUploadProgress.total}…` : isMemoryDragActive ? 'Drop your memories here ❤️' : 'Choose Photos or Videos'}
                   </span>
-                  <span className="text-[10px] text-rose-400/60 mt-1">Select multiple JPG, PNG, MP4, MOV files at once · up to 100</span>
+                  <span className="text-[10px] text-rose-400/60 mt-1">Drag & drop from Discord, Files, Downloads, etc. · or click to browse · up to 100</span>
                 </label>
 
                 {selectedMemoryFiles.length > 0 && (
