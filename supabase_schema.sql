@@ -269,6 +269,45 @@ ON public.journal_entries FOR DELETE
 TO authenticated
 USING ((select public.is_admin()));
 
+
+-- ==========================================
+-- LIVE JOURNAL
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS public.live_journal_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    author_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL CHECK (char_length(trim(content)) > 0 AND char_length(content) <= 5000),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.live_journal_messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Live Journal Read" ON public.live_journal_messages;
+DROP POLICY IF EXISTS "Live Journal Insert" ON public.live_journal_messages;
+
+CREATE POLICY "Live Journal Read"
+ON public.live_journal_messages FOR SELECT
+TO authenticated
+USING (true);
+
+CREATE POLICY "Live Journal Insert"
+ON public.live_journal_messages FOR INSERT
+TO authenticated
+WITH CHECK (author_id = auth.uid());
+
+DO $
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'live_journal_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.live_journal_messages;
+  END IF;
+END $;
+
 -- ==========================================
 -- STORAGE
 -- ==========================================
