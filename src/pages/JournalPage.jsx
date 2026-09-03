@@ -35,6 +35,8 @@ export const JournalPage = () => {
   const [liveText, setLiveText] = useState('');
   const [liveUserId, setLiveUserId] = useState(null);
   const [liveUnread, setLiveUnread] = useState(0);
+  const [liveLastSeen, setLiveLastSeen] = useState(null);
+  const [liveEmojiOpen, setLiveEmojiOpen] = useState(false);
   const liveMessagesRef = React.useRef(null);
 
   const loadEntries = async () => {
@@ -73,7 +75,17 @@ export const JournalPage = () => {
       setLiveUserId(user?.id || null);
       const { data, error: liveError } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
       if (liveError) setError(liveError.message);
-      else setLiveMessages(data || []);
+      else {
+        const messages = data || [];
+        setLiveMessages(messages);
+        const unreadTarget = liveLastSeen ? messages.findIndex((m) => m.id === liveLastSeen) : -1;
+        window.setTimeout(() => {
+          const box = liveMessagesRef.current;
+          if (!box) return;
+          if (unreadTarget >= 0) box.children[Math.min(unreadTarget + 1, box.children.length - 1)]?.scrollIntoView({ block: 'center' });
+          else box.scrollTop = box.scrollHeight;
+        }, 50);
+      }
     } catch (e) {
       setError(e?.message || 'Could not open Live Journal.');
     }
@@ -101,7 +113,7 @@ export const JournalPage = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('Please sign in to use Live Journal.'); return; }
     const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id }).select('*').single();
-    if (sendError) setError(sendError.message); else { setLiveMessages((prev) => prev.some((m) => m.id === data.id) ? prev : [...prev, data]); setLiveText(''); }
+    if (sendError) setError(sendError.message); else { setLiveMessages((prev) => prev.some((m) => m.id === data.id) ? prev : [...prev, data]); setLiveText(''); setLiveLastSeen(data.id); }
   };
 
   const save = async (event) => {
@@ -213,11 +225,11 @@ export const JournalPage = () => {
           <div className="max-w-3xl mx-auto min-h-full py-4 sm:py-8">
             <div className="flex items-center justify-between mb-5"><div><div className="text-[10px] uppercase tracking-[.25em] text-fuchsia-300/60">Write together, now</div><h2 className="font-serif text-4xl italic text-white">Live Journal ✍️</h2><p className="text-xs text-rose-200/50 mt-1">Messages appear here instantly for both of you.</p></div><button type="button" onClick={()=>setLiveOpen(false)} aria-label="Close live journal" className="w-10 h-10 rounded-full bg-rose-950/70 text-rose-200"><X className="mx-auto"/></button></div>
             <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col">
-              <div className="text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-6">Today · our shared page</div>
+              <div className="text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-6">Our shared pages · all time</div>
               <div ref={liveMessagesRef} className="flex-1 space-y-4 overflow-y-auto max-h-[58vh] pr-1">{liveMessages.length === 0 && <div className="h-full min-h-64 flex items-center justify-center text-center font-serif italic text-[#8b5362]">The page is blank.<br/>Start writing together. ❤️</div>}
                 {liveMessages.map((message) => { const mine = message.author_id === liveUserId; return <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] px-4 py-3 rounded-2xl shadow-sm ${mine ? 'bg-[#f4dbe2] rounded-br-sm' : 'bg-[#f7ead8] rounded-bl-sm'}`}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{mine ? 'You' : 'Your person'} · {new Date(message.created_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span><div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div></div></div>; })}
               </div>
-              <form onSubmit={sendLiveMessage} className="mt-6 flex gap-2 border-t border-[#a86b73]/20 pt-5"><input value={liveText} onChange={(e)=>setLiveText(e.target.value)} placeholder="Write something for them…" className="flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"/><button type="submit" disabled={!liveText.trim()} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40"><Send className="w-5 h-5"/></button></form>
+              <form onSubmit={sendLiveMessage} className="mt-6 flex gap-2 border-t border-[#a86b73]/20 pt-5"><div className="relative"><button type="button" onClick={()=>setLiveEmojiOpen(!liveEmojiOpen)} className="h-12 w-12 rounded-2xl border border-[#a86b73]/25 bg-white/70 text-xl">😊</button>{liveEmojiOpen && <div className="absolute bottom-14 left-0 z-10 w-72 rounded-2xl border border-[#a86b73]/25 bg-[#fff8ec] p-3 shadow-2xl"><div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto">{EMOJIS.map((emoji,index)=><button type="button" key={index} onClick={()=>{setLiveText((v)=>v+emoji);setLiveEmojiOpen(false)}} className="text-xl p-1 rounded-lg hover:bg-[#f4dbe2]">{emoji}</button>)}</div></div>}</div><input value={liveText} onChange={(e)=>setLiveText(e.target.value)} placeholder="Write something for them…" className="flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"/><button type="submit" disabled={!liveText.trim()} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40"><Send className="w-5 h-5"/></button></form>
             </div>
           </div>
         </div>
