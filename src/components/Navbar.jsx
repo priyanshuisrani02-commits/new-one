@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Sparkles, Image as ImageIcon, Dices, Mic, Lock, Menu, X, ShieldCheck, BookHeart } from 'lucide-react';
+import { Heart, Sparkles, Image as ImageIcon, Dices, Mic, Lock, Menu, X, ShieldCheck, BookHeart, Timer } from 'lucide-react';
 import { useCouple, playMelodiousChime } from '../context/CoupleContext';
 
 export const Navbar = ({ activeTab, setActiveTab }) => {
@@ -28,6 +28,7 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
     { id: 'home', label: 'Home', icon: Heart },
     { id: 'memories', label: 'Hall of Memories', icon: ImageIcon },
     { id: 'journal', label: 'Journal', icon: BookHeart },
+    { id: 'timecapsule', label: 'Time Capsule', icon: Timer },
     { id: 'activities', label: 'Date Generator', icon: Dices },
     { id: 'voicenotes', label: 'Voice of Us', icon: Mic },
     { id: 'admin', label: 'Admin Panel', icon: Lock },
