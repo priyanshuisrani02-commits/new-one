@@ -57,12 +57,21 @@ export const JournalPage = () => {
   const startOpeningBook = () => { if (openingBook) return; setOpeningBook(true); window.setTimeout(() => setBookOpen(true), 2800); };
   const openEdit = (entry) => { setForm({ ...entry }); setError(''); setEmojiOpen(false); setSelectedEntry(null); setEditorOpen(true); };
   const openEntry = (entry) => { setSelectedEntry(entry); setError(''); };
-  const openLiveJournal = async () => {
-    setLiveOpen(true); setError('');
-    const { data: { user } } = await supabase.auth.getUser();
-    setLiveUserId(user?.id || null);
-    const { data, error: liveError } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
-    if (liveError) setError(liveError.message); else setLiveMessages(data || []);
+  const openLiveJournal = () => {
+    setLiveOpen(true);
+    setError('');
+    loadLiveJournal();
+  };
+  const loadLiveJournal = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      setLiveUserId(user?.id || null);
+      const { data, error: liveError } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
+      if (liveError) setError(liveError.message);
+      else setLiveMessages(data || []);
+    } catch (e) {
+      setError(e?.message || 'Could not open Live Journal.');
+    }
   };
   useEffect(() => {
     if (!liveOpen) return;
