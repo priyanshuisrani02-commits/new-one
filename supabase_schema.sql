@@ -1,3 +1,50 @@
+
+-- ==========================================
+-- TIME CAPSULES
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS public.time_capsules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  author_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL CHECK (char_length(trim(title)) BETWEEN 1 AND 200),
+  message TEXT NOT NULL CHECK (char_length(trim(message)) BETWEEN 1 AND 20000),
+  unlock_at TIMESTAMPTZ NOT NULL,
+  media JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.time_capsules ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Time Capsule Read" ON public.time_capsules;
+DROP POLICY IF EXISTS "Time Capsule Insert" ON public.time_capsules;
+
+CREATE POLICY "Time Capsule Read"
+ON public.time_capsules FOR SELECT
+TO authenticated
+USING (true);
+
+CREATE POLICY "Time Capsule Insert"
+ON public.time_capsules FOR INSERT
+TO authenticated
+WITH CHECK (author_id = auth.uid());
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('time-capsule-media', 'time-capsule-media', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Time Capsule Media Read" ON storage.objects;
+DROP POLICY IF EXISTS "Time Capsule Media Upload" ON storage.objects;
+
+CREATE POLICY "Time Capsule Media Read"
+ON storage.objects FOR SELECT
+TO anon, authenticated
+USING (bucket_id = 'time-capsule-media');
+
+CREATE POLICY "Time Capsule Media Upload"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'time-capsule-media' AND (storage.foldername(name))[1] = (select auth.uid()::text));
+
 -- ==========================================
 -- 4EVER URS — SUPABASE DATABASE & STORAGE SCHEMA
 -- Idempotent schema + secure RLS + realtime
