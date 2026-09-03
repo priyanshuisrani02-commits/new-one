@@ -9,6 +9,7 @@ import { VoiceNotesPage } from './pages/VoiceNotesPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { WordSphereAdmin } from './pages/WordSphereAdmin';
 import { JournalPage } from './pages/JournalPage';
+import { TimeCapsulePage } from './pages/TimeCapsulePage';
 import { Heart } from 'lucide-react';
 
 const MainApp = () => {
@@ -26,6 +27,7 @@ const MainApp = () => {
       {activeTab === 'home' && <LandingPage setActiveTab={setActiveTab} />}
       {activeTab === 'memories' && <HallOfMemories setActiveTab={setActiveTab} />}
       {activeTab === 'journal' && <JournalPage />}
+      {activeTab === 'timecapsule' && <TimeCapsulePage />}
       {activeTab === 'activities' && <ActivityGenerator />}
       {activeTab === 'voicenotes' && <VoiceNotesPage setActiveTab={setActiveTab} />}
       {activeTab === 'admin' && (
