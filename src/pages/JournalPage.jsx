@@ -116,7 +116,7 @@ export const JournalPage = () => {
     if (updateError) setError(updateError.message); else await loadEntries();
   };
 
-  if (!bookOpen) return (<div className="min-h-[calc(100vh-5rem)] flex items-center justify-center px-5 py-16 relative overflow-hidden"><style>{`@keyframes bookHover {0%,100%{transform:translateY(0) rotateY(0deg)}50%{transform:translateY(-8px) rotateY(-2deg)}}
+  if (!bookOpen && !liveOpen) return (<div className="min-h-[calc(100vh-5rem)] flex items-center justify-center px-5 py-16 relative overflow-hidden"><style>{`@keyframes bookHover {0%,100%{transform:translateY(0) rotateY(0deg)}50%{transform:translateY(-8px) rotateY(-2deg)}}
 @keyframes coverOpen {0%{transform:rotateY(0deg) translateZ(0);opacity:1}18%{transform:rotateY(-15deg) translateZ(10px)}48%{transform:rotateY(-85deg) translateX(-4%)}72%{transform:rotateY(-145deg) translateX(-9%);opacity:.85}100%{transform:rotateY(-178deg) translateX(-15%);opacity:0;visibility:hidden}}
 @keyframes pageFly {0%{transform:translate3d(0,12px,0) rotate(0deg) scale(.82);opacity:0}14%{opacity:.9}48%{transform:translate3d(calc((var(--i) - 2.5) * 22px),calc(-65px - var(--i) * 8px),30px) rotate(calc((var(--i) - 2.5) * 15deg)) scale(1)}78%{transform:translate3d(calc((var(--i) - 2.5) * 52px),calc(-125px - var(--i) * 12px),60px) rotate(calc((var(--i) - 2.5) * 28deg)) scale(.86);opacity:.65}100%{transform:translate3d(calc((var(--i) - 2.5) * 82px),calc(-175px - var(--i) * 18px),90px) rotate(calc((var(--i) - 2.5) * 42deg)) scale(.62);opacity:0}}
 @keyframes innerBook {0%{opacity:0;transform:rotateY(-90deg) scale(.9)}55%{opacity:1}100%{opacity:1;transform:rotateY(0) scale(1)}}
