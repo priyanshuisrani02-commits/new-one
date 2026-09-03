@@ -38,6 +38,7 @@ export const JournalPage = () => {
   const [liveLastSeen, setLiveLastSeen] = useState(null);
   const [liveEmojiOpen, setLiveEmojiOpen] = useState(false);
   const liveMessagesRef = React.useRef(null);
+  const liveInitialScrollRef = React.useRef(false);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -66,6 +67,7 @@ export const JournalPage = () => {
     setOpeningBook(false);
     setLiveOpen(true);
     setLiveUnread(0);
+    liveInitialScrollRef.current = true;
     setError('');
     loadLiveJournal();
   };
@@ -78,13 +80,15 @@ export const JournalPage = () => {
       else {
         const messages = data || [];
         setLiveMessages(messages);
-        const unreadTarget = liveLastSeen ? messages.findIndex((m) => m.id === liveLastSeen) : -1;
+        const savedLastRead = window.localStorage.getItem('live-journal-last-read');
+        const unreadIndex = savedLastRead ? messages.findIndex((m) => m.id === savedLastRead) + 1 : messages.length;
+        const targetIndex = unreadIndex >= 0 && unreadIndex < messages.length ? unreadIndex : Math.max(messages.length - 1, 0);
         window.setTimeout(() => {
           const box = liveMessagesRef.current;
-          if (!box) return;
-          if (unreadTarget >= 0) box.children[Math.min(unreadTarget + 1, box.children.length - 1)]?.scrollIntoView({ block: 'center' });
-          else box.scrollTop = box.scrollHeight;
-        }, 50);
+          if (!box || !messages.length) return;
+          box.children[targetIndex]?.scrollIntoView({ block: 'center' });
+          window.setTimeout(() => window.localStorage.setItem('live-journal-last-read', messages[messages.length - 1].id), 300);
+        }, 100);
       }
     } catch (e) {
       setError(e?.message || 'Could not open Live Journal.');
@@ -101,7 +105,10 @@ export const JournalPage = () => {
   }, [liveOpen]);
 
   useEffect(() => {
-    if (!liveOpen) return;
+    if (!liveOpen || liveInitialScrollRef.current) {
+      liveInitialScrollRef.current = false;
+      return;
+    }
     const box = liveMessagesRef.current;
     if (box) box.scrollTop = box.scrollHeight;
   }, [liveMessages, liveOpen]);
@@ -153,7 +160,7 @@ export const JournalPage = () => {
 .flying-page{position:absolute;left:39%;top:32%;width:26%;height:35%;background:linear-gradient(135deg,#fff5e5,#d7b795);border:1px solid rgba(105,62,38,.22);box-shadow:0 10px 22px rgba(40,12,8,.3);border-radius:2px;opacity:0}
 .opening-cover .flying-page{animation:pageFly 1.65s calc(.82s + var(--i)*.12s) cubic-bezier(.18,.78,.18,1) forwards}
 .opening-cover::after{content:'❤️';position:absolute;left:47%;top:48%;font-size:22px;opacity:0;animation:petalFloat 1.9s 1.25s ease-out forwards;filter:drop-shadow(0 0 12px rgba(244,114,182,.5))}
-@media (prefers-reduced-motion:reduce){.book-cover{animation:none}.opening-cover{animation:none;opacity:0}.opening-cover .book-pages{animation:none;opacity:1}.opening-cover .flying-page{animation:none;opacity:0}}`}</style><div className="absolute inset-0 pointer-events-none"><div className="absolute w-96 h-96 rounded-full bg-rose-600/10 blur-3xl top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"/><Heart className="absolute top-24 left-[12%] text-rose-400/10 fill-rose-400/5 w-12 h-12"/><Sparkles className="absolute top-32 right-[14%] text-rose-300/15 w-8 h-8"/></div><div className="relative z-10 text-center"><p className="text-[10px] uppercase tracking-[.4em] text-rose-300/60 mb-5">A story written by two</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-10 max-w-5xl mx-auto"><button onClick={openNormalJournal} disabled={openingBook} className={`book-cover group relative block mx-auto w-[min(82vw,430px)] aspect-[1.38] rounded-r-[1.4rem] rounded-l-lg bg-gradient-to-br from-rose-950 via-[#3b0d1b] to-[#17050c] border border-rose-300/20 shadow-[0_35px_80px_rgba(0,0,0,.65)] ${openingBook ? 'opening-cover' : ''}`}><div className="absolute left-0 top-0 bottom-0 w-[7%] rounded-l-lg bg-gradient-to-r from-[#16040a] to-rose-900/40 border-r border-rose-300/10"/><div className="book-pages"><span className="absolute inset-[8%] border border-[#9d7658]/30 rounded"/><span className="flying-page" style={{'--i':0}}/><span className="flying-page" style={{'--i':1}}/><span className="flying-page" style={{'--i':2}}/><span className="flying-page" style={{'--i':3}}/><span className="flying-page" style={{'--i':4}}/><span className="flying-page" style={{'--i':5}}/></div><div className="absolute inset-[9%] border border-rose-300/15 rounded-r-[1rem] flex flex-col items-center justify-center"><BookHeart className="w-12 h-12 text-rose-300/80 mb-4"/><span className="font-serif text-4xl sm:text-5xl italic text-rose-100">Our Journal</span><span className="mt-3 text-[9px] uppercase tracking-[.35em] text-rose-300/50">little pieces of us</span><span className="mt-8 px-4 py-2 rounded-full border border-rose-300/15 bg-black/15 text-[10px] uppercase tracking-[.2em] text-rose-200/60 group-hover:text-white">{openingBook ? 'Opening our story…' : 'Open the book'}</span></div><Heart className="absolute bottom-[9%] right-[9%] w-5 h-5 text-rose-300/40 fill-rose-300/20"/></button><button type="button" onClick={openLiveJournal} className="book-cover group relative block mx-auto w-[min(82vw,430px)] aspect-[1.38] rounded-r-[1.4rem] rounded-l-lg bg-gradient-to-br from-[#24152a] via-[#4b2039] to-[#130913] border border-fuchsia-300/20 shadow-[0_35px_80px_rgba(0,0,0,.65)]"><div className="absolute -top-4 -right-4 z-20 flex items-center justify-center min-w-10 h-10 px-2 rounded-full bg-[#fff3df] text-[#7a243c] text-xs font-bold border-2 border-rose-300/40 shadow-[0_0_18px_rgba(251,113,133,.65),0_6px_18px_rgba(0,0,0,.35)] ${liveUnread > 0 ? "" : "hidden"}"><span className="absolute inset-0 rounded-full animate-ping bg-rose-400/20"/><span className="relative">{liveUnread > 99 ? "99+" : liveUnread}</span></div><div className="absolute left-0 top-0 bottom-0 w-[7%] rounded-l-lg bg-gradient-to-r from-[#130913] to-fuchsia-900/40 border-r border-fuchsia-300/10"/><div className="absolute inset-[9%] border border-fuchsia-200/15 rounded-r-[1rem] flex flex-col items-center justify-center"><PenLine className="w-12 h-12 text-fuchsia-200/80 mb-4"/><span className="font-serif text-4xl sm:text-5xl italic text-fuchsia-100">Live Journal</span><span className="mt-3 text-[9px] uppercase tracking-[.35em] text-fuchsia-200/50">write together, now</span><span className="mt-8 px-4 py-2 rounded-full border border-fuchsia-200/15 text-[10px] uppercase tracking-[.2em] text-fuchsia-100/60 group-hover:text-white">Open together</span></div></button></div><p className="mt-7 text-sm text-rose-100/40 italic">One keeps our memories. One keeps us in the moment. ❤️</p></div></div>);
+@media (prefers-reduced-motion:reduce){.book-cover{animation:none}.opening-cover{animation:none;opacity:0}.opening-cover .book-pages{animation:none;opacity:1}.opening-cover .flying-page{animation:none;opacity:0}}`}</style><div className="absolute inset-0 pointer-events-none"><div className="absolute w-96 h-96 rounded-full bg-rose-600/10 blur-3xl top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"/><Heart className="absolute top-24 left-[12%] text-rose-400/10 fill-rose-400/5 w-12 h-12"/><Sparkles className="absolute top-32 right-[14%] text-rose-300/15 w-8 h-8"/></div><div className="relative z-10 text-center"><p className="text-[10px] uppercase tracking-[.4em] text-rose-300/60 mb-5">A story written by two</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-10 max-w-5xl mx-auto"><button onClick={openNormalJournal} disabled={openingBook} className={`book-cover group relative block mx-auto w-[min(82vw,430px)] aspect-[1.38] rounded-r-[1.4rem] rounded-l-lg bg-gradient-to-br from-rose-950 via-[#3b0d1b] to-[#17050c] border border-rose-300/20 shadow-[0_35px_80px_rgba(0,0,0,.65)] ${openingBook ? 'opening-cover' : ''}`}><div className="absolute left-0 top-0 bottom-0 w-[7%] rounded-l-lg bg-gradient-to-r from-[#16040a] to-rose-900/40 border-r border-rose-300/10"/><div className="book-pages"><span className="absolute inset-[8%] border border-[#9d7658]/30 rounded"/><span className="flying-page" style={{'--i':0}}/><span className="flying-page" style={{'--i':1}}/><span className="flying-page" style={{'--i':2}}/><span className="flying-page" style={{'--i':3}}/><span className="flying-page" style={{'--i':4}}/><span className="flying-page" style={{'--i':5}}/></div><div className="absolute inset-[9%] border border-rose-300/15 rounded-r-[1rem] flex flex-col items-center justify-center"><BookHeart className="w-12 h-12 text-rose-300/80 mb-4"/><span className="font-serif text-4xl sm:text-5xl italic text-rose-100">Our Journal</span><span className="mt-3 text-[9px] uppercase tracking-[.35em] text-rose-300/50">little pieces of us</span><span className="mt-8 px-4 py-2 rounded-full border border-rose-300/15 bg-black/15 text-[10px] uppercase tracking-[.2em] text-rose-200/60 group-hover:text-white">{openingBook ? 'Opening our story…' : 'Open the book'}</span></div><Heart className="absolute bottom-[9%] right-[9%] w-5 h-5 text-rose-300/40 fill-rose-300/20"/></button><button type="button" onClick={openLiveJournal} className="book-cover group relative block mx-auto w-[min(82vw,430px)] aspect-[1.38] rounded-r-[1.4rem] rounded-l-lg bg-gradient-to-br from-[#24152a] via-[#4b2039] to-[#130913] border border-fuchsia-300/20 shadow-[0_35px_80px_rgba(0,0,0,.65)]"><div className={`absolute -top-4 -right-4 z-20 flex items-center justify-center min-w-10 h-10 px-2 rounded-full bg-[#fff3df] text-[#7a243c] text-xs font-bold border-2 border-rose-300/40 shadow-[0_0_18px_rgba(251,113,133,.65),0_6px_18px_rgba(0,0,0,.35)] ${liveUnread > 0 ? "" : "hidden"}`}><span className="absolute inset-0 rounded-full animate-ping bg-rose-400/20"/><span className="relative">{liveUnread > 99 ? "99+" : liveUnread}</span></div><div className="absolute left-0 top-0 bottom-0 w-[7%] rounded-l-lg bg-gradient-to-r from-[#130913] to-fuchsia-900/40 border-r border-fuchsia-300/10"/><div className="absolute inset-[9%] border border-fuchsia-200/15 rounded-r-[1rem] flex flex-col items-center justify-center"><PenLine className="w-12 h-12 text-fuchsia-200/80 mb-4"/><span className="font-serif text-4xl sm:text-5xl italic text-fuchsia-100">Live Journal</span><span className="mt-3 text-[9px] uppercase tracking-[.35em] text-fuchsia-200/50">write together, now</span><span className="mt-8 px-4 py-2 rounded-full border border-fuchsia-200/15 text-[10px] uppercase tracking-[.2em] text-fuchsia-100/60 group-hover:text-white">Open together</span></div></button></div><p className="mt-7 text-sm text-rose-100/40 italic">One keeps our memories. One keeps us in the moment. ❤️</p></div></div>);
 
   return (
     <div className="journal-book min-h-[calc(100vh-5rem)] pb-20">
