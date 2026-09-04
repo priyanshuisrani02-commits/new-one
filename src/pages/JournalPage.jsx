@@ -29,6 +29,7 @@ export const JournalPage = () => {
   const [liveUserId, setLiveUserId] = useState(null);
   const [liveUnread, setLiveUnread] = useState(0);
   const [liveEmojiOpen, setLiveEmojiOpen] = useState(false);
+  const [liveReactions, setLiveReactions] = useState([]);
   const liveMessagesRef = React.useRef(null);
   const liveInitialScrollRef = React.useRef(false);
 
@@ -66,6 +67,8 @@ export const JournalPage = () => {
       if (liveError) { setError(liveError.message); return; }
       const messages = data || [];
       setLiveMessages(messages);
+      const { data: reactionRows } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
+      setLiveReactions(reactionRows || []);
       const savedLastRead = window.localStorage.getItem('live-journal-last-read');
       const unreadIndex = savedLastRead ? messages.findIndex((m) => m.id === savedLastRead) + 1 : messages.length;
       const targetIndex = unreadIndex >= 0 && unreadIndex < messages.length ? unreadIndex : Math.max(messages.length - 1, 0);
@@ -79,14 +82,20 @@ export const JournalPage = () => {
   };
 
   useEffect(() => {
-    const channel = supabase.channel('live-journal-messages')
+    const messageChannel = supabase.channel('live-journal-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
         setLiveMessages((prev) => prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]);
         if (!liveOpen) setLiveUnread((count) => count + 1);
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [liveOpen]);
+    const reactionChannel = supabase.channel('live-journal-reactions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_journal_reactions' }, (payload) => {
+        if (payload.eventType === 'INSERT') setLiveReactions((prev) => prev.some((r) => r.id === payload.new.id) ? prev : [...prev, payload.new]);
+        if (payload.eventType === 'DELETE') setLiveReactions((prev) => prev.filter((r) => r.id !== payload.old.id));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(messageChannel); supabase.removeChannel(reactionChannel); };
+  }, []);
 
   useEffect(() => {
     if (!liveOpen || liveInitialScrollRef.current) { liveInitialScrollRef.current = false; return; }
@@ -104,8 +113,19 @@ export const JournalPage = () => {
     if (!content) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('Please sign in to use Live Journal.'); return; }
+
+    const optimisticId = `pending-${crypto.randomUUID()}`;
+    const optimisticMessage = { id: optimisticId, content, author_id: user.id, created_at: new Date().toISOString(), __optimistic: true };
+    setLiveMessages((prev) => [...prev, optimisticMessage]);
+    setLiveText('');
+
     const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id }).select('*').single();
-    if (sendError) setError(sendError.message); else { addLiveMessage(data); setLiveText(''); }
+    if (sendError) {
+      setLiveMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      setError(sendError.message);
+      return;
+    }
+    setLiveMessages((prev) => prev.map((m) => m.id === optimisticId ? data : m));
   };
 
   const save = async (event) => {
@@ -164,7 +184,10 @@ export const JournalPage = () => {
         <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col"><div className="text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-6">Our shared pages · all time</div>
           <div ref={liveMessagesRef} className="flex-1 space-y-4 overflow-y-auto max-h-[58vh] pr-1">
             {liveMessages.length===0 && <div className="h-full min-h-64 flex items-center justify-center text-center font-serif italic text-[#8b5362]">The page is blank.<br/>Start writing together. ❤️</div>}
-            {liveMessages.map((message)=><div key={message.id} className={`flex ${message.author_id===liveUserId?'justify-end':'justify-start'}`}><div className={`max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'}`}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span><div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} onSent={addLiveMessage}/></div></div>)}
+            {liveMessages.map((message)=><div key={message.id} className={`flex ${message.author_id===liveUserId?'justify-end':'justify-start'}`}><div className={`max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'}`}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span><div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => {
+  const { data } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
+  setLiveReactions(data || []);
+}} /></div></div>)}
           </div>
           <form onSubmit={sendLiveMessage} className="mt-6 flex gap-2 border-t border-[#a86b73]/20 pt-5"><div className="relative"><button type="button" onClick={()=>setLiveEmojiOpen(!liveEmojiOpen)} className="h-12 w-12 rounded-2xl border border-[#a86b73]/25 bg-white/70 text-xl">😊</button>{liveEmojiOpen&&<div className="absolute bottom-14 left-0 z-10 w-72 rounded-2xl border border-[#a86b73]/25 bg-[#fff8ec] p-3 shadow-2xl"><div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto">{EMOJIS.map((emoji,index)=><button type="button" key={index} onClick={()=>{setLiveText(v=>v+emoji);setLiveEmojiOpen(false)}} className="text-xl p-1 rounded-lg hover:bg-[#f4dbe2]">{emoji}</button>)}</div></div>}</div><input value={liveText} onChange={(e)=>setLiveText(e.target.value)} placeholder="Write something for them…" className="flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"/><button type="submit" disabled={!liveText.trim()} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40"><Send className="w-5 h-5"/></button></form>
         </div></div></div>}
