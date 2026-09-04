@@ -32,6 +32,7 @@ export const JournalPage = () => {
   const [liveReactions, setLiveReactions] = useState([]);
   const liveMessagesRef = React.useRef(null);
   const liveInitialScrollRef = React.useRef(false);
+  const liveMessagesSnapshotRef = React.useRef([]);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -66,6 +67,7 @@ export const JournalPage = () => {
       const { data, error: liveError } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
       if (liveError) { setError(liveError.message); return; }
       const messages = data || [];
+      liveMessagesSnapshotRef.current = messages;
       setLiveMessages(messages);
       const { data: reactionRows } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
       setLiveReactions(reactionRows || []);
@@ -84,10 +86,18 @@ export const JournalPage = () => {
   const liveChannelRef = React.useRef(null);
 
   useEffect(() => {
+    const syncLatestMessages = async () => {
+      const { data } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
+      if (!data) return;
+      liveMessagesSnapshotRef.current = data;
+      setLiveMessages(data);
+    };
+    const poll = window.setInterval(syncLatestMessages, 750);
+
     const messageChannel = supabase.channel('live-journal-messages', { config: { broadcast: { self: false } } })
       .on('broadcast', { event: 'new-message' }, ({ payload }) => {
         if (!payload?.client_id) return;
-        setLiveMessages((prev) => prev.some((m) => m.client_id === payload.client_id) ? prev : [...prev, { ...payload, __broadcast: true }]);
+        setLiveMessages((prev) => { const next = prev.some((m) => m.client_id === payload.client_id) ? prev : [...prev, { ...payload, __broadcast: true }]; liveMessagesSnapshotRef.current = next; return next; });
         if (!liveOpen) setLiveUnread((count) => count + 1);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
@@ -105,7 +115,7 @@ export const JournalPage = () => {
         if (payload.eventType === 'DELETE') setLiveReactions((prev) => prev.filter((r) => r.id !== payload.old.id));
       })
       .subscribe();
-    return () => { liveChannelRef.current = null; supabase.removeChannel(messageChannel); supabase.removeChannel(reactionChannel); };
+    return () => { liveChannelRef.current = null; window.clearInterval(poll); supabase.removeChannel(messageChannel); supabase.removeChannel(reactionChannel); };
   }, []);
 
   useEffect(() => {
@@ -128,7 +138,8 @@ export const JournalPage = () => {
     const clientId = crypto.randomUUID();
     const optimisticId = `pending-${clientId}`;
     const optimisticMessage = { id: optimisticId, client_id: clientId, content, author_id: user.id, created_at: new Date().toISOString(), __optimistic: true };
-    setLiveMessages((prev) => [...prev, optimisticMessage]);
+    liveMessagesSnapshotRef.current = [...liveMessagesSnapshotRef.current, optimisticMessage];
+    setLiveMessages(liveMessagesSnapshotRef.current);
     setLiveText('');
 
     if (liveChannelRef.current) {
@@ -145,7 +156,8 @@ export const JournalPage = () => {
       setError(sendError.message);
       return;
     }
-    setLiveMessages((prev) => prev.map((m) => m.id === optimisticId ? data : m));
+    liveMessagesSnapshotRef.current = liveMessagesSnapshotRef.current.map((m) => m.id === optimisticId ? data : m);
+    setLiveMessages(liveMessagesSnapshotRef.current);
   };
 
   const save = async (event) => {
