@@ -4,42 +4,25 @@ import { supabase } from '../lib/supabaseClient';
 
 const REACTIONS = ['❤️', '😂', '🥹', '👍', '✨', '🫶'];
 
-export const LiveJournalMessageActions = ({ message, userId, messages, onSent }) => {
-  const [reactions, setReactions] = useState([]);
+export const LiveJournalMessageActions = ({ message, userId, messages, reactions: reactionRows = [], onSent, onReactionRefresh }) => {
+  const [reactions, setReactions] = useState(reactionRows);
   const [replying, setReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [busy, setBusy] = useState(false);
   const [reactionOpen, setReactionOpen] = useState(false);
   const [reactionError, setReactionError] = useState('');
 
+  useEffect(() => {
+    setReactions(reactionRows);
+  }, [reactionRows]);
+
   const loadReactions = async () => {
     const { data } = await supabase
       .from('live_journal_reactions')
       .select('id,message_id,user_id,emoji')
       .eq('message_id', message.id);
-    setReactions(data || []);
+    if (data) setReactions(data);
   };
-
-  useEffect(() => {
-    loadReactions();
-    const channel = supabase
-      .channel(`live-reactions-${message.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'live_journal_reactions',
-          filter: `message_id=eq.${message.id}`,
-        },
-        loadReactions,
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [message.id]);
 
   const grouped = useMemo(
     () =>
@@ -64,20 +47,25 @@ export const LiveJournalMessageActions = ({ message, userId, messages, onSent })
 
     try {
       if (existing) {
+        setReactions((prev) => prev.filter((reaction) => reaction.id !== existing.id));
         const { error } = await supabase.from('live_journal_reactions').delete().eq('id', existing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('live_journal_reactions').insert({
+        const optimistic = { id: `pending-${crypto.randomUUID()}`, message_id: message.id, user_id: userId, emoji };
+        setReactions((prev) => [...prev, optimistic]);
+        const { data, error } = await supabase.from('live_journal_reactions').insert({
           message_id: message.id,
           user_id: userId,
           emoji,
-        });
+        }).select('id,message_id,user_id,emoji').single();
         if (error) throw error;
+        setReactions((prev) => prev.map((reaction) => reaction.id === optimistic.id ? data : reaction));
       }
-      await loadReactions();
+      onReactionRefresh?.();
       setReactionOpen(false);
     } catch (error) {
       setReactionError(error?.message || 'Could not update reaction.');
+      await loadReactions();
     } finally {
       setBusy(false);
     }
@@ -149,7 +137,7 @@ export const LiveJournalMessageActions = ({ message, userId, messages, onSent })
           </button>
           {reactionOpen && (
             <div
-              className="absolute bottom-[calc(100%+10px)] right-0 z-40 flex w-max max-w-[calc(100vw-2rem)] items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.25)] backdrop-blur-md"
+              className={`absolute bottom-[calc(100%+10px)] z-40 flex w-max max-w-[calc(100vw-2rem)] ${message.author_id === userId ? 'right-0' : 'left-0'}`} items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.25)] backdrop-blur-md"
               onClick={(event) => event.stopPropagation()}
             >
               {REACTIONS.map((emoji) => (
