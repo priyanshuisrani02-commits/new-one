@@ -11,6 +11,8 @@ export const LiveJournalMessageActions = ({ message, userId, messages, reactions
   const [busy, setBusy] = useState(false);
   const [reactionOpen, setReactionOpen] = useState(false);
   const [reactionError, setReactionError] = useState('');
+  const [reactionPosition, setReactionPosition] = useState(null);
+  const reactionTriggerRef = React.useRef(null);
 
   useEffect(() => {
     setReactions(reactionRows);
@@ -63,6 +65,7 @@ export const LiveJournalMessageActions = ({ message, userId, messages, reactions
       }
       onReactionRefresh?.();
       setReactionOpen(false);
+      setReactionPosition(null);
     } catch (error) {
       setReactionError(error?.message || 'Could not update reaction.');
       await loadReactions();
@@ -127,17 +130,23 @@ export const LiveJournalMessageActions = ({ message, userId, messages, reactions
         <div className="relative">
           <button
             type="button"
-            onClick={() => setReactionOpen((value) => !value)}
+            onClick={() => {
+              if (reactionOpen) { setReactionOpen(false); setReactionPosition(null); return; }
+              const rect = reactionTriggerRef.current?.getBoundingClientRect();
+              if (rect) setReactionPosition({ left: Math.max(8, Math.min(window.innerWidth - 310, rect.right - 290)), top: Math.max(8, rect.top - 62) });
+              setReactionOpen(true);
+            }}
             aria-expanded={reactionOpen}
             aria-label="Add reaction"
             disabled={busy}
-            className="w-8 h-8 rounded-full border border-[#a86b73]/20 bg-white/45 hover:bg-white/70 text-base transition-all disabled:opacity-40"
+            ref={reactionTriggerRef} className="w-8 h-8 rounded-full border border-[#a86b73]/20 bg-white/45 hover:bg-white/70 text-base transition-all disabled:opacity-40"
           >
             <SmilePlus className="w-4 h-4 mx-auto text-[#8b5362]" />
           </button>
-          {reactionOpen && (
+          {reactionOpen && reactionPosition && (
             <div
-              className={`absolute bottom-[calc(100%+10px)] z-40 flex w-max max-w-[calc(100vw-2rem)] ${message.author_id === userId ? 'right-0' : 'left-0'} items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.25)] backdrop-blur-md`}
+              className="fixed z-[100] flex items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.3)] backdrop-blur-md whitespace-nowrap"
+              style={{ left: reactionPosition.left, top: reactionPosition.top }}
               onClick={(event) => event.stopPropagation()}
             >
               {REACTIONS.map((emoji) => (
