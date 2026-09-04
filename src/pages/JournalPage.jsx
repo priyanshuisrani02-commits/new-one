@@ -81,20 +81,27 @@ export const JournalPage = () => {
     } catch (e) { setError(e?.message || 'Could not open Live Journal.'); }
   };
 
+  const liveChannelRef = React.useRef(null);
+
   useEffect(() => {
-    const messageChannel = supabase.channel('live-journal-messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
-        setLiveMessages((prev) => prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new]);
+    const messageChannel = supabase.channel('live-journal-messages', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'new-message' }, ({ payload }) => {
+        if (!payload?.client_id) return;
+        setLiveMessages((prev) => prev.some((m) => m.client_id === payload.client_id) ? prev : [...prev, { ...payload, __broadcast: true }]);
         if (!liveOpen) setLiveUnread((count) => count + 1);
       })
-      .subscribe();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
+        setLiveMessages((prev) => prev.some((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id)) ? prev.map((m) => (m.client_id && m.client_id === payload.new.client_id) ? payload.new : m) : [...prev, payload.new]);
+        if (!liveOpen) setLiveUnread((count) => count + 1);
+      })
+      .subscribe((status) => { if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel; });
     const reactionChannel = supabase.channel('live-journal-reactions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_journal_reactions' }, (payload) => {
         if (payload.eventType === 'INSERT') setLiveReactions((prev) => prev.some((r) => r.id === payload.new.id) ? prev : [...prev, payload.new]);
         if (payload.eventType === 'DELETE') setLiveReactions((prev) => prev.filter((r) => r.id !== payload.old.id));
       })
       .subscribe();
-    return () => { supabase.removeChannel(messageChannel); supabase.removeChannel(reactionChannel); };
+    return () => { liveChannelRef.current = null; supabase.removeChannel(messageChannel); supabase.removeChannel(reactionChannel); };
   }, []);
 
   useEffect(() => {
@@ -114,12 +121,21 @@ export const JournalPage = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('Please sign in to use Live Journal.'); return; }
 
-    const optimisticId = `pending-${crypto.randomUUID()}`;
-    const optimisticMessage = { id: optimisticId, content, author_id: user.id, created_at: new Date().toISOString(), __optimistic: true };
+    const clientId = crypto.randomUUID();
+    const optimisticId = `pending-${clientId}`;
+    const optimisticMessage = { id: optimisticId, client_id: clientId, content, author_id: user.id, created_at: new Date().toISOString(), __optimistic: true };
     setLiveMessages((prev) => [...prev, optimisticMessage]);
     setLiveText('');
 
-    const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id }).select('*').single();
+    if (liveChannelRef.current) {
+      liveChannelRef.current.send({
+        type: 'broadcast',
+        event: 'new-message',
+        payload: { client_id: clientId, content, author_id: user.id, created_at: optimisticMessage.created_at },
+      }).catch(() => {});
+    }
+
+    const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id, client_id: clientId }).select('*').single();
     if (sendError) {
       setLiveMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setError(sendError.message);
