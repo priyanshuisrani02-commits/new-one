@@ -33,6 +33,7 @@ export const JournalPage = () => {
   const liveMessagesRef = React.useRef(null);
   const liveInitialScrollRef = React.useRef(false);
   const liveMessagesSnapshotRef = React.useRef([]);
+  const liveShouldStickToBottomRef = React.useRef(true);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -119,10 +120,20 @@ export const JournalPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!liveOpen || liveInitialScrollRef.current) { liveInitialScrollRef.current = false; return; }
+    if (!liveOpen) return;
+    if (liveInitialScrollRef.current) { liveInitialScrollRef.current = false; return; }
     const box = liveMessagesRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
+    if (box && liveShouldStickToBottomRef.current) {
+      box.scrollTop = box.scrollHeight;
+    }
   }, [liveMessages, liveOpen]);
+
+  const handleLiveScroll = () => {
+    const box = liveMessagesRef.current;
+    if (!box) return;
+    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+    liveShouldStickToBottomRef.current = distanceFromBottom < 80;
+  };
 
   const addLiveMessage = (message) => {
     setLiveMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
@@ -214,7 +225,7 @@ export const JournalPage = () => {
 
       {liveOpen && <div className="fixed inset-0 z-[60] bg-velvet-950/95 backdrop-blur-xl overflow-y-auto p-4 sm:p-8"><div className="max-w-3xl mx-auto min-h-full py-4 sm:py-8"><div className="flex items-center justify-between mb-5"><div><div className="text-[10px] uppercase tracking-[.25em] text-fuchsia-300/60">Write together, now</div><h2 className="font-serif text-4xl italic text-white">Live Journal ✍️</h2><p className="text-xs text-rose-200/50 mt-1">Messages appear here instantly for both of you.</p></div><button type="button" onClick={()=>setLiveOpen(false)} aria-label="Close live journal" className="w-10 h-10 rounded-full bg-rose-950/70 text-rose-200"><X className="mx-auto"/></button></div>
         <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col"><div className="text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-6">Our shared pages · all time</div>
-          <div ref={liveMessagesRef} className="flex-1 space-y-4 overflow-y-auto max-h-[58vh] pr-1">
+          <div ref={liveMessagesRef} onScroll={handleLiveScroll} className="flex-1 space-y-4 overflow-y-auto max-h-[58vh] pr-1">
             {liveMessages.length===0 && <div className="h-full min-h-64 flex items-center justify-center text-center font-serif italic text-[#8b5362]">The page is blank.<br/>Start writing together. ❤️</div>}
             {liveMessages.map((message)=><div key={message.id} className={`flex ${message.author_id===liveUserId?'justify-end':'justify-start'}`}><div className={`max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'}`}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span><div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => {
   const { data } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
