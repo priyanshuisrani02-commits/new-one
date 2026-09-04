@@ -137,7 +137,7 @@ export const LiveJournalMessageActions = ({ message, userId, messages, reactions
           </button>
           {reactionOpen && (
             <div
-              className={`absolute bottom-[calc(100%+10px)] z-40 flex w-max max-w-[calc(100vw-2rem)] ${message.author_id === userId ? 'right-0' : 'left-0'}`} items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.25)] backdrop-blur-md"
+              className={`absolute bottom-[calc(100%+10px)] z-40 flex w-max max-w-[calc(100vw-2rem)] ${message.author_id === userId ? 'right-0' : 'left-0'} items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.25)] backdrop-blur-md`}
               onClick={(event) => event.stopPropagation()}
             >
               {REACTIONS.map((emoji) => (
