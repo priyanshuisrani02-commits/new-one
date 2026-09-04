@@ -88,10 +88,15 @@ export const JournalPage = () => {
 
   useEffect(() => {
     const syncLatestMessages = async () => {
-      const { data } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
-      if (!data) return;
-      liveMessagesSnapshotRef.current = data;
-      setLiveMessages(data);
+      const { data, error } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
+      if (error || !data) return;
+      const incoming = data;
+      setLiveMessages((prev) => {
+        const pending = prev.filter((message) => message.__optimistic);
+        const merged = [...incoming, ...pending.filter((pendingMessage) => !incoming.some((message) => message.client_id === pendingMessage.client_id))];
+        liveMessagesSnapshotRef.current = merged;
+        return merged;
+      });
     };
     const poll = window.setInterval(syncLatestMessages, 750);
 
@@ -103,10 +108,12 @@ export const JournalPage = () => {
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
         setLiveMessages((prev) => {
-          const alreadyShown = prev.some((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id));
-          return alreadyShown
-            ? prev.map((m) => (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id) ? payload.new : m)
+          const existing = prev.find((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id));
+          const next = existing
+            ? prev.map((m) => (m.id === existing.id ? payload.new : m))
             : [...prev, payload.new];
+          liveMessagesSnapshotRef.current = next;
+          return next;
         });
       })
       .subscribe((status) => { if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel; });
