@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CornerUpLeft, Send, X } from 'lucide-react';
+import { CornerUpLeft, Send, X, SmilePlus } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 const REACTIONS = ['❤️', '😂', '🥹', '👍', '✨', '🫶'];
@@ -9,6 +9,8 @@ export const LiveJournalMessageActions = ({ message, userId, messages, onSent })
   const [replying, setReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reactionOpen, setReactionOpen] = useState(false);
+  const [reactionError, setReactionError] = useState('');
 
   const loadReactions = async () => {
     const { data } = await supabase
@@ -54,21 +56,31 @@ export const LiveJournalMessageActions = ({ message, userId, messages, onSent })
   const toggleReaction = async (emoji) => {
     if (!userId || busy) return;
     setBusy(true);
+    setReactionError('');
 
     const existing = reactions.find(
       (reaction) => reaction.emoji === emoji && reaction.user_id === userId,
     );
 
-    if (existing) {
-      await supabase.from('live_journal_reactions').delete().eq('id', existing.id);
-    } else {
-      await supabase
-        .from('live_journal_reactions')
-        .insert({ message_id: message.id, user_id: userId, emoji });
+    try {
+      if (existing) {
+        const { error } = await supabase.from('live_journal_reactions').delete().eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('live_journal_reactions').insert({
+          message_id: message.id,
+          user_id: userId,
+          emoji,
+        });
+        if (error) throw error;
+      }
+      await loadReactions();
+      setReactionOpen(false);
+    } catch (error) {
+      setReactionError(error?.message || 'Could not update reaction.');
+    } finally {
+      setBusy(false);
     }
-
-    await loadReactions();
-    setBusy(false);
   };
 
   const sendReply = async (event) => {
@@ -124,30 +136,36 @@ export const LiveJournalMessageActions = ({ message, userId, messages, onSent })
           </button>
         ))}
 
-        <div className="relative group/reactions">
+        <div className="relative">
           <button
             type="button"
-            className="rounded-full px-2 py-1 text-xs border border-[#a86b73]/20 bg-white/45 hover:bg-white/70"
+            onClick={() => setReactionOpen((value) => !value)}
+            aria-expanded={reactionOpen}
             aria-label="Add reaction"
+            disabled={busy}
+            className="w-8 h-8 rounded-full border border-[#a86b73]/20 bg-white/45 hover:bg-white/70 text-base transition-all disabled:opacity-40"
           >
-            ☺
+            <SmilePlus className="w-4 h-4 mx-auto text-[#8b5362]" />
           </button>
-
-          {/* The picker opens leftward so it stays inside the journal instead of
-              forcing the message area to scroll horizontally. */}
-          <div className="absolute bottom-full right-0 mb-2 hidden items-center gap-1 whitespace-nowrap rounded-xl border border-[#a86b73]/25 bg-[#fff8ec] p-1.5 shadow-xl z-30 group-hover/reactions:flex">
-            {REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => toggleReaction(emoji)}
-                className="w-8 h-8 shrink-0 rounded-lg hover:bg-[#f4dbe2] text-lg"
-                aria-label={`Add ${emoji} reaction`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
+          {reactionOpen && (
+            <div
+              className="absolute bottom-[calc(100%+10px)] right-0 z-40 flex w-max max-w-[calc(100vw-2rem)] items-center gap-1.5 rounded-full border border-[#a86b73]/25 bg-[#fff8ec]/98 px-2 py-2 shadow-[0_12px_35px_rgba(53,21,30,.25)] backdrop-blur-md"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => toggleReaction(emoji)}
+                  disabled={busy}
+                  className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-full text-xl sm:text-2xl hover:bg-[#f4dbe2] active:scale-90 transition-transform disabled:opacity-40"
+                  aria-label={`React ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
@@ -159,6 +177,8 @@ export const LiveJournalMessageActions = ({ message, userId, messages, onSent })
           {replying ? 'Cancel' : 'Reply'}
         </button>
       </div>
+
+      {reactionError && <div className="mt-1 text-[10px] text-red-500/80">{reactionError}</div>}
 
       {replying && (
         <form onSubmit={sendReply} className="mt-2 flex gap-1.5">
