@@ -91,8 +91,12 @@ export const JournalPage = () => {
         if (!liveOpen) setLiveUnread((count) => count + 1);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
-        setLiveMessages((prev) => prev.some((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id)) ? prev.map((m) => (m.client_id && m.client_id === payload.new.client_id) ? payload.new : m) : [...prev, payload.new]);
-        if (!liveOpen) setLiveUnread((count) => count + 1);
+        setLiveMessages((prev) => {
+          const alreadyShown = prev.some((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id));
+          return alreadyShown
+            ? prev.map((m) => (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id) ? payload.new : m)
+            : [...prev, payload.new];
+        });
       })
       .subscribe((status) => { if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel; });
     const reactionChannel = supabase.channel('live-journal-reactions')
