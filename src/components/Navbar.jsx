@@ -2,6 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { Heart, Sparkles, Image as ImageIcon, Dices, Mic, Lock, Menu, X, ShieldCheck, BookHeart, Timer } from 'lucide-react';
 import { useCouple, playMelodiousChime } from '../context/CoupleContext';
 
+const isManualTime = (value) => /^\d{2}:\d{2}$/.test(value || '');
+
+const formatManualTime = (value, now) => {
+  const [hours, minutes] = value.split(':').map(Number);
+  const target = new Date(now);
+  target.setHours(hours, minutes, now.getSeconds(), now.getMilliseconds());
+  return target.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const formatTimezoneTime = (timeZone, now) => {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(now);
+  } catch {
+    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+};
+
+const getConfiguredTime = (value, now) => isManualTime(value) ? formatManualTime(value, now) : formatTimezoneTime(value, now);
+
 export const Navbar = ({ activeTab, setActiveTab }) => {
   const { coupleSettings, isAdmin } = useCouple();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -11,18 +35,13 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
   useEffect(() => {
     const updateClocks = () => {
       const now = new Date();
-      try {
-        setHisTime(new Intl.DateTimeFormat('en-US', { timeZone: coupleSettings.his_timezone || 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: true }).format(now));
-        setHerTime(new Intl.DateTimeFormat('en-US', { timeZone: coupleSettings.her_timezone || 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: true }).format(now));
-      } catch {
-        const fallback = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setHisTime(fallback); setHerTime(fallback);
-      }
+      setHisTime(getConfiguredTime(coupleSettings.his_timezone || 'America/New_York', now));
+      setHerTime(getConfiguredTime(coupleSettings.her_timezone || 'Asia/Tokyo', now));
     };
     updateClocks();
     const interval = setInterval(updateClocks, 1000);
     return () => clearInterval(interval);
-  }, [coupleSettings]);
+  }, [coupleSettings.his_timezone, coupleSettings.her_timezone]);
 
   const navItems = [
     { id: 'home', label: 'Home', icon: Heart },
