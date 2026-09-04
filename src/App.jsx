@@ -11,6 +11,7 @@ import { WordSphereAdmin } from './pages/WordSphereAdmin';
 import { JournalPage } from './pages/JournalPage';
 import { TimeCapsulePage } from './pages/TimeCapsulePage';
 import { JournalUnreadBadges } from './components/JournalUnreadBadges';
+import { ManualTimeSettings } from './components/ManualTimeSettings';
 import { Heart } from 'lucide-react';
 
 const MainApp = () => {
@@ -20,6 +21,7 @@ const MainApp = () => {
   return <div className="min-h-screen flex flex-col relative selection:bg-rose-500 selection:text-white">
     {hearts.map(h => <Heart key={h.id} className="floating-heart text-rose-500/15 fill-rose-500/10 pointer-events-none" style={{ left:h.left,width:h.size,height:h.size,animationDuration:h.duration,animationDelay:h.delay }} />)}
     <JournalUnreadBadges />
+    <ManualTimeSettings />
     <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
     <main className="flex-grow relative z-10">
       {activeTab === 'home' && <LandingPage setActiveTab={setActiveTab} />}
