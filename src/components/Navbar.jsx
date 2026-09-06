@@ -4,11 +4,33 @@ import { useCouple, playMelodiousChime } from '../context/CoupleContext';
 
 const isManualTime = (value) => /^\d{2}:\d{2}$/.test(value || '');
 
-const formatManualTime = (value, now) => {
+const manualClock = (key, value, now) => {
+  if (!isManualTime(value)) return null;
+
+  const storageKey = `4ever-urs-manual-time-${key}`;
+  let anchor = null;
+
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
+    if (saved?.value === value && Number.isFinite(saved?.anchorMs)) anchor = saved;
+  } catch {}
+
+  if (!anchor) {
+    anchor = { value, anchorMs: now.getTime() };
+    try { window.localStorage.setItem(storageKey, JSON.stringify(anchor)); } catch {}
+  }
+
   const [hours, minutes] = value.split(':').map(Number);
-  const target = new Date(now);
-  target.setHours(hours, minutes, now.getSeconds(), now.getMilliseconds());
-  return target.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const elapsedMs = Math.max(0, now.getTime() - anchor.anchorMs);
+  const startMs = (hours * 60 + minutes) * 60 * 1000;
+  const currentMs = (startMs + elapsedMs) % 86400000;
+  const totalSeconds = Math.floor(currentMs / 1000);
+  const currentHours = Math.floor(totalSeconds / 3600);
+  const currentMinutes = Math.floor((totalSeconds % 3600) / 60);
+  const display = new Date(now);
+  display.setHours(currentHours, currentMinutes, totalSeconds % 60, 0);
+
+  return display.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 };
 
 const formatTimezoneTime = (timeZone, now) => {
@@ -24,7 +46,7 @@ const formatTimezoneTime = (timeZone, now) => {
   }
 };
 
-const getConfiguredTime = (value, now) => isManualTime(value) ? formatManualTime(value, now) : formatTimezoneTime(value, now);
+const getConfiguredTime = (key, value, now) => isManualTime(value) ? manualClock(key, value, now) : formatTimezoneTime(value, now);
 
 export const Navbar = ({ activeTab, setActiveTab }) => {
   const { coupleSettings, isAdmin } = useCouple();
@@ -35,8 +57,8 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
   useEffect(() => {
     const updateClocks = () => {
       const now = new Date();
-      setHisTime(getConfiguredTime(coupleSettings.his_timezone || 'America/New_York', now));
-      setHerTime(getConfiguredTime(coupleSettings.her_timezone || 'Asia/Tokyo', now));
+      setHisTime(getConfiguredTime('his', coupleSettings.his_timezone || 'America/New_York', now));
+      setHerTime(getConfiguredTime('her', coupleSettings.her_timezone || 'Asia/Tokyo', now));
     };
     updateClocks();
     const interval = setInterval(updateClocks, 1000);
