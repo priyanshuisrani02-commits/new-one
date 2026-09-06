@@ -330,7 +330,54 @@ export const JournalPage = () => {
   setLiveReactions(data || []);
 }} /></div></div>)}
           </div>
-          <div className="flex items-center gap-2 mb-2 flex-wrap">{liveAttachment&&<div className="flex items-center gap-2 rounded-full border border-[#a86b73]/20 bg-white/60 px-3 py-1.5 text-xs"><Paperclip className="w-3 h-3"/><span className="max-w-52 truncate">{liveAttachment.name}</span><button type="button" onClick={()=>setLiveAttachment(null)} className="ml-1"><X className="w-3 h-3"/></button></div>}</div><form onSubmit={sendLiveMessage} className="mt-4 flex gap-2 border-t border-[#a86b73]/20 pt-5 items-end"><div className="relative"><button type="button" onClick={()=>setLiveEmojiOpen(!liveEmojiOpen)} className="h-12 w-12 rounded-2xl border border-[#a86b73]/25 bg-white/70 text-xl">😊</button>{liveEmojiOpen&&<div className="absolute bottom-14 left-0 z-10 w-72 rounded-2xl border border-[#a86b73]/25 bg-[#fff8ec] p-3 shadow-2xl"><div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto">{EMOJIS.map((emoji,index)=><button type="button" key={index} onClick={()=>{setLiveText(v=>v+emoji);setLiveEmojiOpen(false)}} className="text-xl p-1 rounded-lg hover:bg-[#f4dbe2]">{emoji}</button>)}</div></div>}</div><label className="h-12 w-12 shrink-0 rounded-2xl border border-[#a86b73]/25 bg-white/70 flex items-center justify-center cursor-pointer"><Paperclip className="w-5 h-5"/><input type="file" accept="image/*,audio/*,video/*,.pdf,.txt" className="hidden" onChange={e=>{const file=e.target.files?.[0];if(file)setLiveAttachment({file,name:file.name,type:file.type});e.target.value='';}}/></label><button type="button" onClick={liveRecording?stopLiveRecording:startLiveRecording} className="h-12 w-12 shrink-0 rounded-2xl border border-[#a86b73]/25 bg-white/70 flex items-center justify-center">{liveRecording?<Square className="w-4 h-4 text-red-600"/>:<Mic className="w-5 h-5"/></button><input value={liveText} onChange={e=>{setLiveText(e.target.value);broadcastTyping(Boolean(e.target.value.trim()))}} onBlur={()=>broadcastTyping(false)} placeholder="Write something for them…" className="min-w-0 flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"/><button type="submit" disabled={(!liveText.trim()&&!liveAttachment)||liveSending} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40"><Send className="w-5 h-5"/></button></form>
+          {liveAttachment && (
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <div className="flex items-center gap-2 rounded-full border border-[#a86b73]/20 bg-white/60 px-3 py-1.5 text-xs">
+                <Paperclip className="w-3 h-3" />
+                <span className="max-w-52 truncate">{liveAttachment.name}</span>
+                <button type="button" onClick={() => setLiveAttachment(null)} className="ml-1" aria-label="Remove attachment">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+          <form onSubmit={sendLiveMessage} className="mt-4 flex gap-2 border-t border-[#a86b73]/20 pt-5 items-end">
+            <div className="relative">
+              <button type="button" onClick={() => setLiveEmojiOpen(!liveEmojiOpen)} className="h-12 w-12 rounded-2xl border border-[#a86b73]/25 bg-white/70 text-xl" aria-label="Choose emoji">😊</button>
+              {liveEmojiOpen && (
+                <div className="absolute bottom-14 left-0 z-10 w-72 rounded-2xl border border-[#a86b73]/25 bg-[#fff8ec] p-3 shadow-2xl">
+                  <div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto">
+                    {EMOJIS.map((emoji, index) => (
+                      <button type="button" key={index} onClick={() => { setLiveText((value) => value + emoji); setLiveEmojiOpen(false); }} className="text-xl p-1 rounded-lg hover:bg-[#f4dbe2]">
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <label className="h-12 w-12 shrink-0 rounded-2xl border border-[#a86b73]/25 bg-white/70 flex items-center justify-center cursor-pointer" aria-label="Attach file">
+              <Paperclip className="w-5 h-5" />
+              <input type="file" accept="image/*,audio/*,video/*,.pdf,.txt" className="hidden" onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) setLiveAttachment({ file, name: file.name, type: file.type });
+                event.target.value = '';
+              }} />
+            </label>
+            <button type="button" onClick={liveRecording ? stopLiveRecording : startLiveRecording} className="h-12 w-12 shrink-0 rounded-2xl border border-[#a86b73]/25 bg-white/70 flex items-center justify-center" aria-label={liveRecording ? 'Stop recording' : 'Record voice note'}>
+              {liveRecording ? <Square className="w-4 h-4 text-red-600" /> : <Mic className="w-5 h-5" />}
+            </button>
+            <input
+              value={liveText}
+              onChange={(event) => { setLiveText(event.target.value); broadcastTyping(Boolean(event.target.value.trim())); }}
+              onBlur={() => broadcastTyping(false)}
+              placeholder="Write something for them…"
+              className="min-w-0 flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"
+            />
+            <button type="submit" disabled={(!liveText.trim() && !liveAttachment) || liveSending} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40" aria-label="Send message">
+              <Send className="w-5 h-5" />
+            </button>
+          </form>
         </div></div></div>}
 
       {selectedEntry && <div className="fixed inset-0 z-50 bg-velvet-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-8" onClick={()=>setSelectedEntry(null)}><div className="min-h-full flex items-center justify-center py-6 sm:py-10"><article onClick={e=>e.stopPropagation()} className="relative w-full max-w-4xl min-h-[78vh] rounded-[2rem] border border-rose-300/15 bg-[#fff8ec] text-[#35151e] shadow-2xl overflow-hidden"><button type="button" onClick={()=>setSelectedEntry(null)} className="absolute right-4 top-4 z-20 w-10 h-10 rounded-full bg-[#5a1c2c]/10 text-[#5a1c2c]"><X className="w-5 h-5 mx-auto"/></button><div className="relative z-10 px-7 py-10 sm:px-16 sm:py-14 md:px-20"><div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] uppercase tracking-[.2em] text-[#8b5362]"><span>{new Date(selectedEntry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span><span>•</span><span>{selectedEntry.author==='his'?'🖤 Him':selectedEntry.author==='her'?'💗 Her':'💞 Both of us'}</span><span>•</span><span>{selectedEntry.mood_emoji||'❤️'} {selectedEntry.mood||'A little feeling'}</span></div><h2 className="mt-8 font-serif text-4xl sm:text-6xl italic leading-tight text-[#4a1724]">{selectedEntry.title}</h2><div className="mt-8 h-px bg-[#a86b73]/25"/><p className="mt-9 whitespace-pre-wrap break-words font-serif text-lg sm:text-xl leading-[2] text-[#4a2630]">{selectedEntry.content}</p><div className="mt-12 pt-5 border-t border-[#a86b73]/20 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={()=>toggleFavorite(selectedEntry)} className="inline-flex items-center gap-2 text-sm text-[#8b5362]">{selectedEntry.favorite?<Star className="w-4 h-4 text-amber-500 fill-amber-500"/>:<Star className="w-4 h-4"/>} {selectedEntry.favorite?'Close to our hearts':'Keep this one close'}</button><div className="flex gap-2"><button type="button" onClick={()=>openEdit(selectedEntry)} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#5a1c2c]">Edit</button><button type="button" onClick={()=>{setSelectedEntry(null);remove(selectedEntry.id)}} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#8b5362]"><Trash2 className="w-3.5 h-3.5 inline mr-1"/>Delete</button></div></div></div></article></div></div>}
