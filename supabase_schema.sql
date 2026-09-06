@@ -1,4 +1,17 @@
 
+-- LIVE JOURNAL MEDIA / PINNED MESSAGE SUPPORT
+ALTER TABLE public.live_journal_messages ADD COLUMN IF NOT EXISTS media_url TEXT;
+ALTER TABLE public.live_journal_messages ADD COLUMN IF NOT EXISTS media_type TEXT;
+ALTER TABLE public.live_journal_messages ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS live_journal_messages_created_at_idx ON public.live_journal_messages(created_at);
+DROP POLICY IF EXISTS "Live Journal Update" ON public.live_journal_messages;
+CREATE POLICY "Live Journal Update" ON public.live_journal_messages FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+INSERT INTO storage.buckets (id,name,public) VALUES ('live-journal-media','live-journal-media',true) ON CONFLICT (id) DO UPDATE SET public=true;
+DROP POLICY IF EXISTS "Live Journal Media Read" ON storage.objects;
+DROP POLICY IF EXISTS "Live Journal Media Upload" ON storage.objects;
+CREATE POLICY "Live Journal Media Read" ON storage.objects FOR SELECT TO anon, authenticated USING (bucket_id='live-journal-media');
+CREATE POLICY "Live Journal Media Upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id='live-journal-media' AND (storage.foldername(name))[1]=(select auth.uid()::text));
+
 -- ==========================================
 -- TIME CAPSULES
 -- ==========================================
