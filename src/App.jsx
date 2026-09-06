@@ -5,7 +5,6 @@ import { AdminAuthGate } from './components/AdminAuthGate';
 import { LandingPage } from './pages/LandingPage';
 import { HallOfMemories } from './pages/HallOfMemories';
 import { ActivityGenerator } from './pages/ActivityGenerator';
-import { VoiceNotesPage } from './pages/VoiceNotesPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { WordSphereAdmin } from './pages/WordSphereAdmin';
 import { JournalPage } from './pages/JournalPage';
@@ -31,11 +30,10 @@ const MainApp = () => {
       {activeTab === 'timecapsule' && <TimeCapsulePage />}
       {activeTab === 'openwhen' && <OpenWhenPage />}
       {activeTab === 'activities' && <ActivityGenerator />}
-      {activeTab === 'voicenotes' && <VoiceNotesPage setActiveTab={setActiveTab} />}
       {activeTab === 'admin' && <AdminAuthGate><div className="space-y-10 pb-12"><AdminDashboard /><div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8"><div className="border-t border-rose-900/30 pt-10"><WordSphereAdmin /></div></div></div></AdminAuthGate>}
       {activeTab === 'word-sphere-admin' && <AdminAuthGate><WordSphereAdmin /></AdminAuthGate>}
     </main>
-    <footer className="relative z-10 border-t border-rose-900/30 bg-velvet-950/90 py-6 sm:py-8 text-center text-xs text-rose-300/60"><div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4"><div className="flex items-center space-x-2"><Heart className="w-4 h-4 text-rose-500 fill-rose-500" /><span className="font-serif text-sm font-semibold text-rose-200">4EVER URS</span><span>— Made with love</span></div><div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 text-[11px] sm:text-xs"><button onClick={()=>setActiveTab('home')}>Home</button><button onClick={()=>setActiveTab('memories')}>Memories</button><button onClick={()=>setActiveTab('journal')}>Journal</button><button onClick={()=>setActiveTab('activities')}>Date Generator</button><button onClick={()=>setActiveTab('voicenotes')}>Voice Notes</button><button onClick={()=>setActiveTab('admin')}>Admin</button><button onClick={()=>setActiveTab('word-sphere-admin')}>Word Sphere</button></div></div></footer>
+    <footer className="relative z-10 border-t border-rose-900/30 bg-velvet-950/90 py-6 sm:py-8 text-center text-xs text-rose-300/60"><div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4"><div className="flex items-center space-x-2"><Heart className="w-4 h-4 text-rose-500 fill-rose-500" /><span className="font-serif text-sm font-semibold text-rose-200">4EVER URS</span><span>— Made with love</span></div><div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 text-[11px] sm:text-xs"><button onClick={()=>setActiveTab('home')}>Home</button><button onClick={()=>setActiveTab('memories')}>Memories</button><button onClick={()=>setActiveTab('journal')}>Journal</button><button onClick={()=>setActiveTab('activities')}>Date Generator</button><button onClick={()=>setActiveTab('admin')}>Admin</button><button onClick={()=>setActiveTab('word-sphere-admin')}>Word Sphere</button></div></div></footer>
   </div>;
 };
 export default function App() { return <CoupleProvider><MainApp /></CoupleProvider>; }
