@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { BookHeart, CalendarDays, Heart, Plus, Search, Star, Trash2, X, Save, Sparkles, Smile, PenLine, Send } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BookHeart, CalendarDays, Heart, Plus, Search, Star, Trash2, X, Save, Sparkles, Smile, PenLine, Send, Paperclip, Mic, Square, Users, Pin, PinOff, Volume2 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { LiveJournalMessageActions } from '../components/LiveJournalMessageActions';
 
@@ -34,6 +34,14 @@ export const JournalPage = () => {
   const liveInitialScrollRef = React.useRef(false);
   const liveMessagesSnapshotRef = React.useRef([]);
   const liveShouldStickToBottomRef = React.useRef(true);
+  const liveTypingRef = useRef(null);
+  const liveRecorderRef = useRef(null);
+  const liveRecordedChunksRef = useRef([]);
+  const [liveTyping, setLiveTyping] = useState(false);
+  const [liveOnline, setLiveOnline] = useState(1);
+  const [liveAttachment, setLiveAttachment] = useState(null);
+  const [liveSending, setLiveSending] = useState(false);
+  const [liveRecording, setLiveRecording] = useState(false);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -87,41 +95,34 @@ export const JournalPage = () => {
   const liveChannelRef = React.useRef(null);
 
   useEffect(() => {
-    if (!liveOpen) return undefined;
-
+    if (!liveOpen || !liveUserId) return undefined;
     let disposed = false;
 
     const syncLatestMessages = async () => {
-      const { data, error } = await supabase
-        .from('live_journal_messages')
-        .select('*')
-        .order('created_at', { ascending: true });
-
+      const { data, error } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
       if (disposed || error || !data) return;
-
       setLiveMessages((prev) => {
         const pending = prev.filter((message) => message.__optimistic);
-        const merged = [...data, ...pending.filter((pendingMessage) => !data.some(
-          (message) => message.client_id && message.client_id === pendingMessage.client_id
-        ))];
+        const merged = [...data, ...pending.filter((pendingMessage) => !data.some((message) => message.client_id && message.client_id === pendingMessage.client_id))];
         liveMessagesSnapshotRef.current = merged;
         return merged;
       });
     };
 
-    // Realtime is the fast path; this short-lived sync loop is a reliability
-    // fallback while the Live Journal is actually open.
     syncLatestMessages();
-    const poll = window.setInterval(syncLatestMessages, 500);
+    const poll = window.setInterval(syncLatestMessages, 700);
 
     const messageChannel = supabase
-      .channel(`live-journal-${crypto.randomUUID()}`)
+      .channel(`live-journal-${crypto.randomUUID()}`, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload?.user_id === liveUserId) return;
+        setLiveTyping(Boolean(payload?.is_typing));
+        window.clearTimeout(liveTypingRef.current);
+        if (payload?.is_typing) liveTypingRef.current = window.setTimeout(() => setLiveTyping(false), 1800);
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
         setLiveMessages((prev) => {
-          const existing = prev.find(
-            (m) => m.id === payload.new.id ||
-              (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id)
-          );
+          const existing = prev.find((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id));
           const next = existing
             ? prev.map((m) => (m.id === existing.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id)) ? payload.new : m)
             : [...prev, payload.new];
@@ -129,15 +130,25 @@ export const JournalPage = () => {
           return next;
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel;
+      });
+
+    const presenceChannel = supabase.channel('live-journal-presence', { config: { presence: { key: liveUserId } } })
+      .on('presence', { event: 'sync' }, () => setLiveOnline(Math.max(1, Object.keys(presenceChannel.presenceState()).length)))
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') await presenceChannel.track({ user_id: liveUserId, online_at: new Date().toISOString() });
+      });
 
     return () => {
       disposed = true;
       window.clearInterval(poll);
+      window.clearTimeout(liveTypingRef.current);
       liveChannelRef.current = null;
       supabase.removeChannel(messageChannel);
+      supabase.removeChannel(presenceChannel);
     };
-  }, [liveOpen]);
+  }, [liveOpen, liveUserId]);
 
 
   useEffect(() => {
@@ -157,39 +168,97 @@ export const JournalPage = () => {
   };
 
   const addLiveMessage = (message) => {
-    setLiveMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
+    setLiveMessages((prev) => prev.some((m) => m.id === message.id || (m.client_id && message.client_id && m.client_id === message.client_id)) ? prev : [...prev, message]);
+  };
+
+  const broadcastTyping = (isTyping) => {
+    if (!liveChannelRef.current || !liveUserId) return;
+    liveChannelRef.current.send({ type: 'broadcast', event: 'typing', payload: { user_id: liveUserId, is_typing: isTyping } }).catch(() => {});
+  };
+
+  const uploadLiveFile = async (file, userId) => {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${userId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const { data, error } = await supabase.storage.from('live-journal-media').upload(path, file, { upsert: false, contentType: file.type || undefined });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from('live-journal-media').getPublicUrl(data.path);
+    return { url: urlData.publicUrl, type: file.type || 'application/octet-stream' };
   };
 
   const sendLiveMessage = async (event) => {
     event.preventDefault();
     const content = liveText.trim();
-    if (!content) return;
+    if (!content && !liveAttachment) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('Please sign in to use Live Journal.'); return; }
 
     const clientId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
     const optimisticId = `pending-${clientId}`;
-    const optimisticMessage = { id: optimisticId, client_id: clientId, content, author_id: user.id, created_at: new Date().toISOString(), __optimistic: true };
-    liveMessagesSnapshotRef.current = [...liveMessagesSnapshotRef.current, optimisticMessage];
-    setLiveMessages(liveMessagesSnapshotRef.current);
+    setLiveSending(true);
     setLiveText('');
+    broadcastTyping(false);
 
-    if (liveChannelRef.current) {
-      liveChannelRef.current.send({
-        type: 'broadcast',
-        event: 'new-message',
-        payload: { client_id: clientId, content, author_id: user.id, created_at: optimisticMessage.created_at },
-      }).catch(() => {});
-    }
+    let media = liveAttachment;
+    try {
+      if (liveAttachment?.file) media = await uploadLiveFile(liveAttachment.file, user.id);
+      const optimisticMessage = { id: optimisticId, client_id: clientId, content, author_id: user.id, created_at: createdAt, media_url: media?.url || null, media_type: media?.type || null, pinned: false, __optimistic: true };
+      liveMessagesSnapshotRef.current = [...liveMessagesSnapshotRef.current, optimisticMessage];
+      setLiveMessages(liveMessagesSnapshotRef.current);
 
-    const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id, client_id: clientId }).select('*').single();
-    if (sendError) {
+      const payload = { client_id: clientId, content, author_id: user.id, created_at: createdAt, media_url: media?.url || null, media_type: media?.type || null };
+      liveChannelRef.current?.send({ type: 'broadcast', event: 'new-message', payload }).catch(() => {});
+
+      const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id, client_id: clientId, media_url: media?.url || null, media_type: media?.type || null }).select('*').single();
+      if (sendError) throw sendError;
+      liveMessagesSnapshotRef.current = liveMessagesSnapshotRef.current.map((m) => m.id === optimisticId ? data : m);
+      setLiveMessages(liveMessagesSnapshotRef.current);
+      setLiveAttachment(null);
+    } catch (sendError) {
       setLiveMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-      setError(sendError.message);
+      setError(sendError?.message || 'Could not send that message.');
+    } finally {
+      setLiveSending(false);
+    }
+  };
+
+  const toggleLivePinned = async (message) => {
+    const next = !message.pinned;
+    setLiveMessages((prev) => prev.map((m) => m.id === message.id ? { ...m, pinned: next } : m));
+    const { data, error } = await supabase.from('live_journal_messages').update({ pinned: next }).eq('id', message.id).select('*').single();
+    if (error) {
+      setLiveMessages((prev) => prev.map((m) => m.id === message.id ? { ...m, pinned: !next } : m));
+      setError(error.message);
       return;
     }
-    liveMessagesSnapshotRef.current = liveMessagesSnapshotRef.current.map((m) => m.id === optimisticId ? data : m);
-    setLiveMessages(liveMessagesSnapshotRef.current);
+    if (data) setLiveMessages((prev) => prev.map((m) => m.id === message.id ? data : m));
+  };
+
+  const startLiveRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || liveRecording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find((type) => MediaRecorder.isTypeSupported?.(type)) || '';
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      liveRecorderRef.current = recorder;
+      liveRecordedChunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) liveRecordedChunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(liveRecordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: blob.type });
+        setLiveAttachment({ file, name: file.name, type: file.type });
+        setLiveRecording(false);
+      };
+      recorder.start();
+      setLiveRecording(true);
+    } catch (recordError) {
+      setError(recordError?.message || 'Microphone access was unavailable.');
+    }
+  };
+
+  const stopLiveRecording = () => {
+    if (liveRecorderRef.current?.state !== 'inactive') liveRecorderRef.current?.stop();
   };
 
   const save = async (event) => {
@@ -245,15 +314,17 @@ export const JournalPage = () => {
       </section>
 
       {liveOpen && <div className="fixed inset-0 z-[60] bg-velvet-950/95 backdrop-blur-xl overflow-y-auto p-4 sm:p-8"><div className="max-w-3xl mx-auto min-h-full py-4 sm:py-8"><div className="flex items-center justify-between mb-5"><div><div className="text-[10px] uppercase tracking-[.25em] text-fuchsia-300/60">Write together, now</div><h2 className="font-serif text-4xl italic text-white">Live Journal ✍️</h2><p className="text-xs text-rose-200/50 mt-1">Messages appear here instantly for both of you.</p></div><button type="button" onClick={()=>setLiveOpen(false)} aria-label="Close live journal" className="w-10 h-10 rounded-full bg-rose-950/70 text-rose-200"><X className="mx-auto"/></button></div>
-        <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col"><div className="text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-6">Our shared pages · all time</div>
+        <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col"><div className="flex items-center justify-center gap-3 text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-3"><Users className="w-4 h-4"/><span>Our shared pages · all time</span></div>
+          <div className="text-center text-xs text-[#8b5362] mb-5">{liveOnline > 1 ?' Together right now ❤️' : 'Waiting for your person…'}</div>
+          {liveTyping && <div className="text-center font-serif italic text-sm text-[#8b5362] animate-pulse mb-3">✍️ Your person is writing…</div>}
           <div ref={liveMessagesRef} onScroll={handleLiveScroll} className="flex-1 space-y-4 overflow-y-auto max-h-[58vh] pr-1">
             {liveMessages.length===0 && <div className="h-full min-h-64 flex items-center justify-center text-center font-serif italic text-[#8b5362]">The page is blank.<br/>Start writing together. ❤️</div>}
-            {liveMessages.map((message)=><div key={message.id} className={`flex ${message.author_id===liveUserId?'justify-end':'justify-start'}`}><div className={`max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'}`}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span><div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => {
+            {liveMessages.map((message)=><div key={message.id} className={`flex ${message.author_id===liveUserId?'justify-end':'justify-start'}`}><div className={`relative max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'} ${message.pinned ? 'ring-2 ring-[#b98955]/50' : ''} `}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>{message.pinned&&<span className="absolute -top-2 right-2 rounded-full bg-[#fff8ec] px-2 py-1 text-[9px] text-[#8b5362] shadow"><Pin className="inline w-3 h-3 mr-1"/>Pinned</span>}{message.media_url&&<div className="mb-2 overflow-hidden rounded-xl">{message.media_type?.startsWith('image/')?<img src={message.media_url} alt="Shared" className="max-h-72 w-full object-contain"/>:message.media_type?.startsWith('audio/')?<div className="p-2 flex items-center gap-2"><Volume2 className="w-4 h-4"/><audio controls src={message.media_url} className="w-full"/></div>:message.media_type?.startsWith('video/')?<video controls src={message.media_url} className="w-full max-h-72"/>:<a href={message.media_url} target="_blank" rel="noreferrer" className="block p-3 underline text-sm">Open attachment</a>}</div>}<div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><button type="button" onClick={(event)=>{event.stopPropagation();toggleLivePinned(message)}} className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] text-[#8b5362] hover:bg-black/5">{message.pinned?<PinOff className="w-3 h-3"/>:<Pin className="w-3 h-3"/>}{message.pinned?"Unpin":"Pin"}</button><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => {
   const { data } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
   setLiveReactions(data || []);
 }} /></div></div>)}
           </div>
-          <form onSubmit={sendLiveMessage} className="mt-6 flex gap-2 border-t border-[#a86b73]/20 pt-5"><div className="relative"><button type="button" onClick={()=>setLiveEmojiOpen(!liveEmojiOpen)} className="h-12 w-12 rounded-2xl border border-[#a86b73]/25 bg-white/70 text-xl">😊</button>{liveEmojiOpen&&<div className="absolute bottom-14 left-0 z-10 w-72 rounded-2xl border border-[#a86b73]/25 bg-[#fff8ec] p-3 shadow-2xl"><div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto">{EMOJIS.map((emoji,index)=><button type="button" key={index} onClick={()=>{setLiveText(v=>v+emoji);setLiveEmojiOpen(false)}} className="text-xl p-1 rounded-lg hover:bg-[#f4dbe2]">{emoji}</button>)}</div></div>}</div><input value={liveText} onChange={(e)=>setLiveText(e.target.value)} placeholder="Write something for them…" className="flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"/><button type="submit" disabled={!liveText.trim()} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40"><Send className="w-5 h-5"/></button></form>
+          <div className="flex items-center gap-2 mb-2 flex-wrap">{liveAttachment&&<div className="flex items-center gap-2 rounded-full border border-[#a86b73]/20 bg-white/60 px-3 py-1.5 text-xs"><Paperclip className="w-3 h-3"/><span className="max-w-52 truncate">{liveAttachment.name}</span><button type="button" onClick={()=>setLiveAttachment(null)} className="ml-1"><X className="w-3 h-3"/></button></div>}</div><form onSubmit={sendLiveMessage} className="mt-4 flex gap-2 border-t border-[#a86b73]/20 pt-5 items-end"><div className="relative"><button type="button" onClick={()=>setLiveEmojiOpen(!liveEmojiOpen)} className="h-12 w-12 rounded-2xl border border-[#a86b73]/25 bg-white/70 text-xl">😊</button>{liveEmojiOpen&&<div className="absolute bottom-14 left-0 z-10 w-72 rounded-2xl border border-[#a86b73]/25 bg-[#fff8ec] p-3 shadow-2xl"><div className="grid grid-cols-8 gap-1 max-h-40 overflow-y-auto">{EMOJIS.map((emoji,index)=><button type="button" key={index} onClick={()=>{setLiveText(v=>v+emoji);setLiveEmojiOpen(false)}} className="text-xl p-1 rounded-lg hover:bg-[#f4dbe2]">{emoji}</button>)}</div></div>}</div><label className="h-12 w-12 shrink-0 rounded-2xl border border-[#a86b73]/25 bg-white/70 flex items-center justify-center cursor-pointer"><Paperclip className="w-5 h-5"/><input type="file" accept="image/*,audio/*,video/*,.pdf,.txt" className="hidden" onChange={e=>{const file=e.target.files?.[0];if(file)setLiveAttachment({file,name:file.name,type:file.type});e.target.value='';}}/></label><button type="button" onClick={liveRecording?stopLiveRecording:startLiveRecording} className="h-12 w-12 shrink-0 rounded-2xl border border-[#a86b73]/25 bg-white/70 flex items-center justify-center">{liveRecording?<Square className="w-4 h-4 text-red-600"/>:<Mic className="w-5 h-5"/></button><input value={liveText} onChange={e=>{setLiveText(e.target.value);broadcastTyping(Boolean(e.target.value.trim()))}} onBlur={()=>broadcastTyping(false)} placeholder="Write something for them…" className="min-w-0 flex-1 rounded-2xl border border-[#a86b73]/25 bg-white/70 px-4 py-3 font-serif text-base outline-none focus:border-[#8b5362]/50"/><button type="submit" disabled={(!liveText.trim()&&!liveAttachment)||liveSending} className="rounded-2xl bg-[#5a1c2c] px-5 text-white disabled:opacity-40"><Send className="w-5 h-5"/></button></form>
         </div></div></div>}
 
       {selectedEntry && <div className="fixed inset-0 z-50 bg-velvet-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-8" onClick={()=>setSelectedEntry(null)}><div className="min-h-full flex items-center justify-center py-6 sm:py-10"><article onClick={e=>e.stopPropagation()} className="relative w-full max-w-4xl min-h-[78vh] rounded-[2rem] border border-rose-300/15 bg-[#fff8ec] text-[#35151e] shadow-2xl overflow-hidden"><button type="button" onClick={()=>setSelectedEntry(null)} className="absolute right-4 top-4 z-20 w-10 h-10 rounded-full bg-[#5a1c2c]/10 text-[#5a1c2c]"><X className="w-5 h-5 mx-auto"/></button><div className="relative z-10 px-7 py-10 sm:px-16 sm:py-14 md:px-20"><div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] uppercase tracking-[.2em] text-[#8b5362]"><span>{new Date(selectedEntry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span><span>•</span><span>{selectedEntry.author==='his'?'🖤 Him':selectedEntry.author==='her'?'💗 Her':'💞 Both of us'}</span><span>•</span><span>{selectedEntry.mood_emoji||'❤️'} {selectedEntry.mood||'A little feeling'}</span></div><h2 className="mt-8 font-serif text-4xl sm:text-6xl italic leading-tight text-[#4a1724]">{selectedEntry.title}</h2><div className="mt-8 h-px bg-[#a86b73]/25"/><p className="mt-9 whitespace-pre-wrap break-words font-serif text-lg sm:text-xl leading-[2] text-[#4a2630]">{selectedEntry.content}</p><div className="mt-12 pt-5 border-t border-[#a86b73]/20 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={()=>toggleFavorite(selectedEntry)} className="inline-flex items-center gap-2 text-sm text-[#8b5362]">{selectedEntry.favorite?<Star className="w-4 h-4 text-amber-500 fill-amber-500"/>:<Star className="w-4 h-4"/>} {selectedEntry.favorite?'Close to our hearts':'Keep this one close'}</button><div className="flex gap-2"><button type="button" onClick={()=>openEdit(selectedEntry)} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#5a1c2c]">Edit</button><button type="button" onClick={()=>{setSelectedEntry(null);remove(selectedEntry.id)}} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#8b5362]"><Trash2 className="w-3.5 h-3.5 inline mr-1"/>Delete</button></div></div></div></article></div></div>}
