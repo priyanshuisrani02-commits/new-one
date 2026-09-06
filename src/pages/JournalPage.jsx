@@ -103,7 +103,13 @@ export const JournalPage = () => {
       if (disposed || error || !data) return;
       setLiveMessages((prev) => {
         const pending = prev.filter((message) => message.__optimistic);
-        const merged = [...data, ...pending.filter((pendingMessage) => !data.some((message) => message.client_id && message.client_id === pendingMessage.client_id))];
+        const currentByClient = new Map(prev.filter((message) => message.client_id).map((message) => [message.client_id, message]));
+        const merged = [...data];
+        for (const pendingMessage of pending) {
+          if (!data.some((message) => message.client_id === pendingMessage.client_id)) merged.push(pendingMessage);
+        }
+        // Never replace a newer in-memory message with an older snapshot.
+        merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         liveMessagesSnapshotRef.current = merged;
         return merged;
       });
