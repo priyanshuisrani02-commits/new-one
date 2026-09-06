@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Sparkles, Image as ImageIcon, Dices, Mic, Lock, Menu, X, ShieldCheck, BookHeart, Timer, MailOpen } from 'lucide-react';
+import { Heart, Sparkles, Image as ImageIcon, Dices, Lock, Menu, X, ShieldCheck, BookHeart, Timer, MailOpen } from 'lucide-react';
 import { useCouple, playMelodiousChime } from '../context/CoupleContext';
 
 const isManualTime = (value) => /^\d{2}:\d{2}$/.test(value || '');
@@ -72,8 +72,7 @@ export const Navbar = ({ activeTab, setActiveTab }) => {
     { id: 'openwhen', label: 'Open When…', icon: MailOpen },
     { id: 'timecapsule', label: 'Time Capsule', icon: Timer },
     { id: 'activities', label: 'Date Generator', icon: Dices },
-    { id: 'voicenotes', label: 'Voice of Us', icon: Mic },
-    { id: 'admin', label: 'Admin Panel', icon: Lock },
+        { id: 'admin', label: 'Admin Panel', icon: Lock },
   ];
 
   const handleTabChange = (tabId) => {
