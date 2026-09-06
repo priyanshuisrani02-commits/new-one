@@ -10,6 +10,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { WordSphereAdmin } from './pages/WordSphereAdmin';
 import { JournalPage } from './pages/JournalPage';
 import { TimeCapsulePage } from './pages/TimeCapsulePage';
+import { OpenWhenPage } from './pages/OpenWhenPage';
 import { JournalUnreadBadges } from './components/JournalUnreadBadges';
 import { ManualTimeSettings } from './components/ManualTimeSettings';
 import { Heart } from 'lucide-react';
@@ -28,6 +29,7 @@ const MainApp = () => {
       {activeTab === 'memories' && <HallOfMemories setActiveTab={setActiveTab} />}
       {activeTab === 'journal' && <JournalPage />}
       {activeTab === 'timecapsule' && <TimeCapsulePage />}
+      {activeTab === 'openwhen' && <OpenWhenPage />}
       {activeTab === 'activities' && <ActivityGenerator />}
       {activeTab === 'voicenotes' && <VoiceNotesPage setActiveTab={setActiveTab} />}
       {activeTab === 'admin' && <AdminAuthGate><div className="space-y-10 pb-12"><AdminDashboard /><div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8"><div className="border-t border-rose-900/30 pt-10"><WordSphereAdmin /></div></div></div></AdminAuthGate>}
