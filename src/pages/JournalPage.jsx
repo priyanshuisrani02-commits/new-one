@@ -215,10 +215,17 @@ export const JournalPage = () => {
       const payload = { client_id: clientId, content, author_id: user.id, created_at: createdAt, media_url: media?.url || null, media_type: media?.type || null };
       liveChannelRef.current?.send({ type: 'broadcast', event: 'new-message', payload }).catch(() => {});
 
-      const { data, error: sendError } = await supabase.from('live_journal_messages').insert({ content, author_id: user.id, client_id: clientId, media_url: media?.url || null, media_type: media?.type || null }).select('*').single();
+      const { error: sendError } = await supabase.from('live_journal_messages').insert({
+        content,
+        author_id: user.id,
+        client_id: clientId,
+        media_url: media?.url || null,
+        media_type: media?.type || null,
+      });
       if (sendError) throw sendError;
-      liveMessagesSnapshotRef.current = liveMessagesSnapshotRef.current.map((m) => m.id === optimisticId ? data : m);
-      setLiveMessages(liveMessagesSnapshotRef.current);
+
+      // Keep the optimistic message visible. The active sync/realtime listener
+      // will reconcile it with the persisted database row by client_id.
       setLiveAttachment(null);
     } catch (sendError) {
       setLiveMessages((prev) => prev.filter((m) => m.id !== optimisticId));
