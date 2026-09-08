@@ -99,31 +99,41 @@ export const JournalPage = () => {
     if (!liveOpen || !liveUserId) return undefined;
     let disposed = false;
 
-    const mergeMessages = (incoming) => {
+    const mergeMessages = (incoming, persisted = false) => {
       if (!incoming?.length) return;
       setLiveMessages((prev) => {
-        const byId = new Map(prev.map((message) => [message.id, message]));
-        const byClient = new Map(
-          prev.filter((message) => message.client_id).map((message) => [message.client_id, message.id]),
-        );
-
-        incoming.forEach((message) => {
-          const existingId = byId.has(message.id)
-            ? message.id
-            : (message.client_id && byClient.get(message.client_id));
-          if (existingId && byId.has(existingId)) {
-            byId.set(existingId, { ...byId.get(existingId), ...message, __optimistic: false });
-          } else {
-            byId.set(message.id, message);
-          }
+        const byKey = new Map();
+        prev.forEach((message) => {
+          const key = message.id || message.client_id;
+          if (key) byKey.set(key, message);
         });
 
-        const next = Array.from(byId.values()).sort(
+        incoming.forEach((message) => {
+          const key = message.id || message.client_id;
+          if (!key) return;
+          const existing = byKey.get(key);
+          byKey.set(key, existing
+            ? { ...existing, ...message, __optimistic: false }
+            : message);
+        });
+
+        const next = Array.from(byKey.values()).sort(
           (a, b) => new Date(a.created_at) - new Date(b.created_at),
         );
         liveMessagesSnapshotRef.current = next;
-        if (next.length) {
-          liveLatestCreatedAtRef.current = next[next.length - 1].created_at;
+
+        // Only persisted database rows advance the polling cursor.
+        if (persisted && incoming.length) {
+          const persistedRows = incoming.filter((message) => message.id);
+          if (persistedRows.length) {
+            const newest = persistedRows.reduce(
+              (latest, message) => new Date(message.created_at) > new Date(latest.created_at) ? message : latest,
+              persistedRows[0],
+            );
+            if (!liveLatestCreatedAtRef.current || new Date(newest.created_at) > new Date(liveLatestCreatedAtRef.current)) {
+              liveLatestCreatedAtRef.current = newest.created_at;
+            }
+          }
         }
         return next;
       });
@@ -133,9 +143,12 @@ export const JournalPage = () => {
       const { data, error } = await supabase
         .from('live_journal_messages')
         .select('*')
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(1000);
       if (disposed || error) return;
-      mergeMessages(data || []);
+      const latestFirst = (data || []).reverse();
+      liveLatestCreatedAtRef.current = latestFirst.length ? latestFirst[latestFirst.length - 1].created_at : null;
+      mergeMessages(latestFirst, true);
     };
 
     const loadNewMessages = async () => {
@@ -148,7 +161,7 @@ export const JournalPage = () => {
       if (cursor) query = query.gt('created_at', cursor);
       const { data, error } = await query;
       if (disposed || error || !data?.length) return;
-      mergeMessages(data);
+      mergeMessages(data, true);
     };
 
     loadInitial();
@@ -158,7 +171,9 @@ export const JournalPage = () => {
       .channel('live-journal-messages')
       .on('broadcast', { event: 'new-message' }, ({ payload }) => {
         if (payload?.author_id === liveUserId) return;
-        mergeMessages([payload]);
+        // Broadcast payloads use client_id (not the database id), so they must
+        // be keyed by client_id or multiple quick messages overwrite each other.
+        mergeMessages([payload], false);
       })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload?.user_id === liveUserId) return;
@@ -169,7 +184,7 @@ export const JournalPage = () => {
         }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
-        mergeMessages([payload.new]);
+        mergeMessages([payload.new], true);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel;
