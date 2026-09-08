@@ -63,6 +63,7 @@ export const AdminDashboard = () => {
   const [newNote, setNewNote] = useState({
     title: '',
     person: 'him',
+    open_when_key: 'miss',
     audio_url: '',
     duration: '0:30',
     transcript_or_note: ''
@@ -353,6 +354,7 @@ export const AdminDashboard = () => {
     setNewNote({
       title: '',
       person: 'him',
+      open_when_key: 'miss',
       audio_url: '',
       duration: '0:30',
       transcript_or_note: ''
@@ -451,7 +453,7 @@ export const AdminDashboard = () => {
         {[
           { id: 'memories', label: 'Upload Memories', icon: Image },
           { id: 'categories', label: 'Manage Categories', icon: Tag },
-          { id: 'voicenotes', label: 'Upload Voice Notes', icon: Mic },
+          { id: 'openwhen-voices', label: 'Open When Voices', icon: Mic },
           { id: 'activities', label: 'Manage Date Ideas', icon: Dices },
           { id: 'settings', label: 'Couple Settings', icon: Settings }
         ].map(tab => {
@@ -736,7 +738,7 @@ export const AdminDashboard = () => {
           <div className="lg:col-span-1 glass-panel p-6 rounded-3xl border border-rose-500/30">
             <h3 className="font-serif text-xl font-bold text-white mb-4 flex items-center space-x-2">
               <Mic className="w-5 h-5 text-rose-400" />
-              <span>Add a Voice Note</span>
+              <span>Seal an Open When Voice</span>
             </h3>
 
             <form onSubmit={handleAddVoiceNoteSubmit} className="space-y-4 text-xs">
@@ -801,7 +803,7 @@ export const AdminDashboard = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Goodnight my warmth"
+                  placeholder="e.g. Missing you tonight"
                   value={newNote.title}
                   onChange={(e) => setNewNote({ ...newNote, title: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-velvet-950 border border-rose-900/40 text-white placeholder-rose-400/40 focus:outline-none focus:border-rose-500"
@@ -809,14 +811,20 @@ export const AdminDashboard = () => {
               </div>
 
               <div>
-                <label className="block text-rose-300 mb-1 font-medium">Assign To Button</label>
+                <label className="block text-rose-300 mb-1 font-medium">Open When</label>
                 <select
-                  value={newNote.person}
-                  onChange={(e) => setNewNote({ ...newNote, person: e.target.value })}
+                  value={newNote.open_when_key || 'miss'}
+                  onChange={(e) => setNewNote({ ...newNote, open_when_key: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl bg-velvet-950 border border-rose-900/40 text-white focus:outline-none focus:border-rose-500"
                 >
-                  <option value="him">Plays when clicking "I Miss Him"</option>
-                  <option value="her">Plays when clicking "I Miss Her"</option>
+                  <option value="miss">Open when you miss me</option>
+                  <option value="smile">Open when you need a smile</option>
+                  <option value="sleep">Open when you cannot sleep</option>
+                  <option value="hug">Open when you need a hug</option>
+                  <option value="motivation">Open when you need motivation</option>
+                  <option value="bad-day">Open when today is hard</option>
+                  <option value="remember">Open when you want to remember us</option>
+                  <option value="morning">Open when you wake up</option>
                 </select>
               </div>
 
@@ -842,7 +850,7 @@ export const AdminDashboard = () => {
 
           <div className="lg:col-span-2 glass-panel p-6 rounded-3xl border border-rose-900/40">
             <h3 className="font-serif text-xl font-bold text-white mb-4">
-              Current Voice Messages ({voiceNotes.length})
+              Sealed Open When Voices ({voiceNotes.length})
             </h3>
 
             <div className="space-y-3">
@@ -855,7 +863,7 @@ export const AdminDashboard = () => {
                         {v.person}
                       </span>
                     </div>
-                    <p className="text-xs text-rose-300/60 mt-1">{v.transcript_or_note}</p>
+                    <p className="text-xs text-rose-300/60 mt-1">{v.open_when_key ? `Open when: ${v.open_when_key}` : 'Unassigned'} · {v.transcript_or_note}</p>
                   </div>
 
                   <button
