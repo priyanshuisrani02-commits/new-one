@@ -98,17 +98,39 @@ export const JournalPage = () => {
     if (!liveOpen || !liveUserId) return undefined;
     let disposed = false;
 
+    const mergeMessage = (incoming) => {
+      if (!incoming?.content && !incoming?.media_url) return;
+      setLiveMessages((prev) => {
+        const existing = prev.find((m) =>
+          (incoming.id && m.id === incoming.id) ||
+          (incoming.client_id && m.client_id && m.client_id === incoming.client_id)
+        );
+        const next = existing
+          ? prev.map((m) => (
+              (incoming.id && m.id === incoming.id) ||
+              (incoming.client_id && m.client_id && m.client_id === incoming.client_id)
+            ) ? { ...m, ...incoming, __optimistic: false } : m)
+          : [...prev, incoming];
+        next.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        liveMessagesSnapshotRef.current = next;
+        return next;
+      });
+    };
+
     const syncLatestMessages = async () => {
-      const { data, error } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
+      const { data, error } = await supabase
+        .from('live_journal_messages')
+        .select('*')
+        .order('created_at', { ascending: true });
       if (disposed || error || !data) return;
+
       setLiveMessages((prev) => {
         const pending = prev.filter((message) => message.__optimistic);
-        const currentByClient = new Map(prev.filter((message) => message.client_id).map((message) => [message.client_id, message]));
-        const merged = [...data];
-        for (const pendingMessage of pending) {
-          if (!data.some((message) => message.client_id === pendingMessage.client_id)) merged.push(pendingMessage);
-        }
-        // Never replace a newer in-memory message with an older snapshot.
+        const merged = [...data, ...pending.filter(
+          (pendingMessage) => !data.some(
+            (message) => message.client_id && message.client_id === pendingMessage.client_id
+          )
+        )];
         merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         liveMessagesSnapshotRef.current = merged;
         return merged;
@@ -116,34 +138,38 @@ export const JournalPage = () => {
     };
 
     syncLatestMessages();
-    const poll = window.setInterval(syncLatestMessages, 700);
+    const poll = window.setInterval(syncLatestMessages, 2000);
 
     const messageChannel = supabase
-      .channel(`live-journal-${crypto.randomUUID()}`, { config: { broadcast: { self: false } } })
+      .channel('live-journal-messages')
+      .on('broadcast', { event: 'new-message' }, ({ payload }) => {
+        if (payload?.author_id === liveUserId) return;
+        mergeMessage(payload);
+      })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload?.user_id === liveUserId) return;
         setLiveTyping(Boolean(payload?.is_typing));
         window.clearTimeout(liveTypingRef.current);
-        if (payload?.is_typing) liveTypingRef.current = window.setTimeout(() => setLiveTyping(false), 1800);
+        if (payload?.is_typing) {
+          liveTypingRef.current = window.setTimeout(() => setLiveTyping(false), 1800);
+        }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
-        setLiveMessages((prev) => {
-          const existing = prev.find((m) => m.id === payload.new.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id));
-          const next = existing
-            ? prev.map((m) => (m.id === existing.id || (m.client_id && payload.new.client_id && m.client_id === payload.new.client_id)) ? payload.new : m)
-            : [...prev, payload.new];
-          liveMessagesSnapshotRef.current = next;
-          return next;
-        });
+        mergeMessage(payload.new);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel;
       });
 
-    const presenceChannel = supabase.channel('live-journal-presence', { config: { presence: { key: liveUserId } } })
-      .on('presence', { event: 'sync' }, () => setLiveOnline(Math.max(1, Object.keys(presenceChannel.presenceState()).length)))
+    const presenceChannel = supabase
+      .channel('live-journal-presence', { config: { presence: { key: liveUserId } } })
+      .on('presence', { event: 'sync' }, () => {
+        setLiveOnline(Math.max(1, Object.keys(presenceChannel.presenceState()).length));
+      })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') await presenceChannel.track({ user_id: liveUserId, online_at: new Date().toISOString() });
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({ user_id: liveUserId, online_at: new Date().toISOString() });
+        }
       });
 
     return () => {
@@ -155,7 +181,6 @@ export const JournalPage = () => {
       supabase.removeChannel(presenceChannel);
     };
   }, [liveOpen, liveUserId]);
-
 
   useEffect(() => {
     if (!liveOpen) return;
@@ -213,7 +238,9 @@ export const JournalPage = () => {
       setLiveMessages(liveMessagesSnapshotRef.current);
 
       const payload = { client_id: clientId, content, author_id: user.id, created_at: createdAt, media_url: media?.url || null, media_type: media?.type || null };
-      liveChannelRef.current?.send({ type: 'broadcast', event: 'new-message', payload }).catch(() => {});
+      if (liveChannelRef.current) {
+        liveChannelRef.current.send({ type: 'broadcast', event: 'new-message', payload }).catch(() => {});
+      }
 
       const { error: sendError } = await supabase.from('live_journal_messages').insert({
         content,
