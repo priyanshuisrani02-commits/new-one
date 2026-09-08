@@ -436,7 +436,7 @@ export const AdminDashboard = () => {
             <ShieldCheck className="w-6 h-6 text-emerald-400" />
             <h1 className="font-serif text-2xl sm:text-3xl font-bold text-white">Couple Admin Dashboard</h1>
           </div>
-          <p className="text-xs text-rose-300/70 mt-1">Manage Memories, Memory Categories, Voice Notes & Settings</p>
+          <p className="text-xs text-rose-300/70 mt-1">Manage Memories, Open When Voices & Settings</p>
         </div>
 
         <button
@@ -770,7 +770,7 @@ export const AdminDashboard = () => {
                 {!isRecordingAudio ? (
                   <button type="button" onClick={startAudioRecording} disabled={isUploadingAudio} className="w-full py-4 rounded-2xl bg-rose-950/70 border border-rose-700/50 text-rose-100 font-semibold flex items-center justify-center gap-2 hover:bg-rose-900/70 transition-all">
                     <Mic className="w-5 h-5 text-rose-300" />
-                    Record a Voice Note
+                    Record a Voice
                   </button>
                 ) : (
                   <button type="button" onClick={stopAudioRecording} className="w-full py-4 rounded-2xl bg-rose-600 text-white font-semibold flex items-center justify-center gap-3 animate-pulse">
@@ -786,14 +786,14 @@ export const AdminDashboard = () => {
                       <button type="button" onClick={clearRecordedAudio} className="text-[10px] text-rose-300 hover:text-white">Record again</button>
                     </div>
                     <audio controls src={recordedAudioUrl} className="w-full h-9" />
-                    {newNote.audio_url && <p className="text-[10px] text-emerald-300 mt-2 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Saved to voice notes</p>}
+                    {newNote.audio_url && <p className="text-[10px] text-emerald-300 mt-2 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Voice ready</p>}
                   </div>
                 )}
 
                 {newNote.audio_url && !recordedAudioUrl && (
                   <div className="p-2 bg-rose-900/40 rounded-xl text-[11px] text-emerald-300 font-medium flex items-center justify-center space-x-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Audio Clip Attached!</span>
+                    <span>Voice attached!</span>
                   </div>
                 )}
               </div>
@@ -843,7 +843,7 @@ export const AdminDashboard = () => {
                 type="submit"
                 className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold shadow-md shadow-rose-600/30"
               >
-                Save Voice Note
+                Seal Voice
               </button>
             </form>
           </div>
