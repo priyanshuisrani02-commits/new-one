@@ -504,3 +504,8 @@ SELECT * FROM (VALUES
   ('Good morning my love!', 'her', 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3', '0:35', 'Good morning! Hope your day is bright and sweet.')
 ) AS seed(title, person, audio_url, duration, transcript_or_note)
 WHERE NOT EXISTS (SELECT 1 FROM public.voice_notes);
+
+
+-- LIVE JOURNAL REPLIES
+ALTER TABLE public.live_journal_messages ADD COLUMN IF NOT EXISTS reply_to_id UUID REFERENCES public.live_journal_messages(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS live_journal_messages_reply_to_idx ON public.live_journal_messages(reply_to_id);
