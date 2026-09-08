@@ -132,11 +132,9 @@ export const JournalPage = () => {
           // client_id as the persisted row. Reconcile those into ONE bubble.
           const existingKey = message.client_id && idByClientId.get(message.client_id);
           if (existingKey && byId.has(existingKey)) {
-            byId.set(existingKey, { ...byId.get(existingKey), ...message, __optimistic: false });
-            if (message.id && existingKey !== message.id) {
-              byId.delete(existingKey);
-              byId.set(message.id, { ...byId.get(existingKey), ...message, __optimistic: false });
-            }
+            const merged = { ...byId.get(existingKey), ...message, __optimistic: false };
+            byId.delete(existingKey);
+            byId.set(message.id || existingKey, merged);
             return;
           }
 
