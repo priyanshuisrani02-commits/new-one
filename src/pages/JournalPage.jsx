@@ -117,22 +117,37 @@ export const JournalPage = () => {
     const mergeMessages = (incoming, persisted = false) => {
       if (!incoming?.length) return;
       setLiveMessages((prev) => {
-        const byKey = new Map();
+        const byId = new Map();
+        const idByClientId = new Map();
+
         prev.forEach((message) => {
-          const key = message.id || message.client_id;
-          if (key) byKey.set(key, message);
+          if (message.id) byId.set(message.id, message);
+          if (message.client_id) idByClientId.set(message.client_id, message.id || message.client_id);
         });
 
         incoming.forEach((message) => {
-          const key = message.id || message.client_id;
-          if (!key) return;
-          const existing = byKey.get(key);
-          byKey.set(key, existing
+          if (!message?.id && !message?.client_id) return;
+
+          // A just-sent optimistic message has a temporary id but the same
+          // client_id as the persisted row. Reconcile those into ONE bubble.
+          const existingKey = message.client_id && idByClientId.get(message.client_id);
+          if (existingKey && byId.has(existingKey)) {
+            byId.set(existingKey, { ...byId.get(existingKey), ...message, __optimistic: false });
+            if (message.id && existingKey !== message.id) {
+              byId.delete(existingKey);
+              byId.set(message.id, { ...byId.get(existingKey), ...message, __optimistic: false });
+            }
+            return;
+          }
+
+          const existing = message.id ? byId.get(message.id) : null;
+          byId.set(message.id || message.client_id, existing
             ? { ...existing, ...message, __optimistic: false }
             : message);
+          if (message.client_id) idByClientId.set(message.client_id, message.id || message.client_id);
         });
 
-        const next = Array.from(byKey.values()).sort(
+        const next = Array.from(byId.values()).sort(
           (a, b) => new Date(a.created_at) - new Date(b.created_at),
         );
         liveMessagesSnapshotRef.current = next;
@@ -532,7 +547,7 @@ export const JournalPage = () => {
     const dayChanged = !previousDate || currentDate.toDateString() !== previousDate.toDateString();
     const dayLabel = currentDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     return (
-      <React.Fragment key={message.id}>
+      <React.Fragment key={message.client_id || message.id}>
         {dayChanged && <div className="flex items-center gap-3 py-2"><div className="h-px flex-1 bg-[#a86b73]/15" /><span className="rounded-full bg-[#f1e0d0] px-3 py-1 text-[10px] uppercase tracking-[.12em] text-[#8b5362]">{dayLabel}</span><div className="h-px flex-1 bg-[#a86b73]/15" /></div>}
         <div className={"flex " + (message.author_id===liveUserId ? "justify-end" : "justify-start")}>
           <div className={"relative max-w-[88%] px-4 py-3 rounded-2xl shadow-sm " + (message.author_id===liveUserId ? "bg-[#f4dbe2] rounded-br-sm" : "bg-[#f7ead8] rounded-bl-sm") + (message.pinned ? " ring-2 ring-[#b98955]/50" : "")}>
