@@ -43,6 +43,17 @@ export const JournalPage = () => {
   const [liveAttachment, setLiveAttachment] = useState(null);
   const [liveSending, setLiveSending] = useState(false);
   const [liveRecording, setLiveRecording] = useState(false);
+  const [callState, setCallState] = useState('idle');
+  const [callType, setCallType] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [callMuted, setCallMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const peerRef = useRef(null);
+  const callIdRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -175,13 +186,29 @@ export const JournalPage = () => {
         // be keyed by client_id or multiple quick messages overwrite each other.
         mergeMessages([payload], false);
       })
+      .on('broadcast', { event: 'call-signal' }, async ({ payload }) => {
+        if (!payload || payload.sender_id === liveUserId) return;
+        try {
+          if (payload.type === 'offer' && callState === 'idle') {
+            setIncomingCall({ call_id: payload.call_id, call_type: payload.call_type, description: payload.description });
+          } else if (payload.call_id === callIdRef.current && payload.type === 'answer' && peerRef.current) {
+            await peerRef.current.setRemoteDescription(payload.description);
+            setCallState('connected');
+          } else if (payload.call_id === callIdRef.current && payload.type === 'ice' && peerRef.current) {
+            await peerRef.current.addIceCandidate(payload.candidate);
+          } else if (payload.call_id === callIdRef.current && payload.type === 'reject') {
+            cleanupCall();
+            setError('The call was declined.');
+          } else if (payload.call_id === callIdRef.current && payload.type === 'hangup') {
+            cleanupCall();
+          }
+        } catch (signalError) { console.warn('Live call signaling error:', signalError); }
+      })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload?.user_id === liveUserId) return;
         setLiveTyping(Boolean(payload?.is_typing));
         window.clearTimeout(liveTypingRef.current);
-        if (payload?.is_typing) {
-          liveTypingRef.current = window.setTimeout(() => setLiveTyping(false), 1800);
-        }
+        if (payload?.is_typing) liveTypingRef.current = window.setTimeout(() => setLiveTyping(false), 1800);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
         mergeMessages([payload.new], true);
@@ -330,6 +357,123 @@ export const JournalPage = () => {
     if (liveRecorderRef.current?.state !== 'inactive') liveRecorderRef.current?.stop();
   };
 
+
+  const cleanupCall = () => {
+    peerRef.current?.close();
+    peerRef.current = null;
+    localStream?.getTracks().forEach((track) => track.stop());
+    setLocalStream(null);
+    setRemoteStream(null);
+    setCallState('idle');
+    setCallType(null);
+    setIncomingCall(null);
+    callIdRef.current = null;
+    setCallMuted(false);
+    setCameraOff(false);
+  };
+
+  const sendCallSignal = (payload) => {
+    if (!liveChannelRef.current) return;
+    liveChannelRef.current.send({ type: 'broadcast', event: 'call-signal', payload }).catch(() => {});
+  };
+
+  const startCall = async (type) => {
+    if (callState !== 'idle' || !liveUserId || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+      const callId = crypto.randomUUID();
+      const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }] });
+      peerRef.current = peer;
+      callIdRef.current = callId;
+      setCallType(type);
+      setLocalStream(stream);
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+      peer.ontrack = (event) => { if (event.streams[0]) setRemoteStream(event.streams[0]); };
+      peer.onicecandidate = (event) => { if (event.candidate) sendCallSignal({ type: 'ice', call_id: callId, sender_id: liveUserId, candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate }); };
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      setCallState('calling');
+      sendCallSignal({ type: 'offer', call_id: callId, sender_id: liveUserId, call_type: type, description: peer.localDescription });
+    } catch (callError) {
+      setError(callError?.message || 'Could not start the call. Please allow microphone/camera access.');
+      cleanupCall();
+    }
+  };
+
+  const acceptIncomingCall = async () => {
+    const call = incomingCall;
+    if (!call) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.call_type === 'video' });
+      const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }] });
+      peerRef.current = peer;
+      callIdRef.current = call.call_id;
+      setCallType(call.call_type);
+      setLocalStream(stream);
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+      peer.ontrack = (event) => { if (event.streams[0]) setRemoteStream(event.streams[0]); };
+      peer.onicecandidate = (event) => { if (event.candidate) sendCallSignal({ type: 'ice', call_id: call.call_id, sender_id: liveUserId, candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate }); };
+      await peer.setRemoteDescription(call.description);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      sendCallSignal({ type: 'answer', call_id: call.call_id, sender_id: liveUserId, description: peer.localDescription });
+      setIncomingCall(null);
+      setCallState('connected');
+    } catch (callError) {
+      setError(callError?.message || 'Could not accept the call.');
+      cleanupCall();
+    }
+  };
+
+  const rejectIncomingCall = () => {
+    if (incomingCall) sendCallSignal({ type: 'reject', call_id: incomingCall.call_id, sender_id: liveUserId });
+    setIncomingCall(null);
+  };
+
+  const endCall = () => {
+    if (callIdRef.current) sendCallSignal({ type: 'hangup', call_id: callIdRef.current, sender_id: liveUserId });
+    cleanupCall();
+  };
+
+  const toggleCallMute = () => {
+    const next = !callMuted;
+    localStream?.getAudioTracks().forEach((track) => { track.enabled = !next; });
+    setCallMuted(next);
+  };
+
+  const toggleCallCamera = () => {
+    const next = !cameraOff;
+    localStream?.getVideoTracks().forEach((track) => { track.enabled = !next; });
+    setCameraOff(next);
+  };
+
+  const renderLiveMessages = () => liveMessages.map((message, index) => {
+    const currentDate = new Date(message.created_at);
+    const previousDate = index > 0 ? new Date(liveMessages[index - 1].created_at) : null;
+    const dayChanged = !previousDate || currentDate.toDateString() !== previousDate.toDateString();
+    const dayLabel = currentDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return (
+      <React.Fragment key={message.id}>
+        {dayChanged && <div className="flex items-center gap-3 py-2"><div className="h-px flex-1 bg-[#a86b73]/15" /><span className="rounded-full bg-[#f1e0d0] px-3 py-1 text-[10px] uppercase tracking-[.12em] text-[#8b5362]">{dayLabel}</span><div className="h-px flex-1 bg-[#a86b73]/15" /></div>}
+        <div className={"flex " + (message.author_id===liveUserId ? "justify-end" : "justify-start")}>
+          <div className={"relative max-w-[88%] px-4 py-3 rounded-2xl shadow-sm " + (message.author_id===liveUserId ? "bg-[#f4dbe2] rounded-br-sm" : "bg-[#f7ead8] rounded-bl-sm") + (message.pinned ? " ring-2 ring-[#b98955]/50" : "")}>
+            <span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId ? "You" : "Your person"} · {currentDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+            {message.pinned && <span className="absolute -top-2 right-2 rounded-full bg-[#fff8ec] px-2 py-1 text-[9px] text-[#8b5362] shadow"><Pin className="inline w-3 h-3 mr-1" />Pinned</span>}
+            {message.media_url && <div className="mb-2 overflow-hidden rounded-xl">{message.media_type?.startsWith("image/") ? <img src={message.media_url} alt="Shared" className="max-h-72 w-full object-contain" /> : message.media_type?.startsWith("audio/") ? <div className="p-2 flex items-center gap-2"><Volume2 className="w-4 h-4" /><audio controls src={message.media_url} className="w-full" /></div> : message.media_type?.startsWith("video/") ? <video controls src={message.media_url} className="w-full max-h-72" /> : <a href={message.media_url} target="_blank" rel="noreferrer" className="block p-3 underline text-sm">Open attachment</a>}</div>}
+            <div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div>
+            <button type="button" onClick={(event)=>{event.stopPropagation();toggleLivePinned(message)}} className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] text-[#8b5362] hover:bg-black/5">{message.pinned?<PinOff className="w-3 h-3"/>:<Pin className="w-3 h-3"/>}{message.pinned?"Unpin":"Pin"}</button>
+            <LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => { const { data } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji'); setLiveReactions(data || []); }} />
+          </div>
+        </div>
+      </React.Fragment>
+    );
+  });
+
+  useEffect(() => {
+    if (localVideoRef.current) localVideoRef.current.srcObject = localStream || null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream || null;
+  }, [localStream, remoteStream]);
+
   const save = async (event) => {
     event.preventDefault();
     if (!form.content.trim()) { setError('Please write something on this page before saving.'); return; }
@@ -383,12 +527,12 @@ export const JournalPage = () => {
       </section>
 
       {liveOpen && <div className="fixed inset-0 z-[60] bg-velvet-950/95 backdrop-blur-xl overflow-y-auto p-4 sm:p-8"><div className="max-w-3xl mx-auto min-h-full py-4 sm:py-8"><div className="flex items-center justify-between mb-5"><div><div className="text-[10px] uppercase tracking-[.25em] text-fuchsia-300/60">Write together, now</div><h2 className="font-serif text-4xl italic text-white">Live Journal ✍️</h2><p className="text-xs text-rose-200/50 mt-1">Messages appear here instantly for both of you.</p></div><button type="button" onClick={()=>setLiveOpen(false)} aria-label="Close live journal" className="w-10 h-10 rounded-full bg-rose-950/70 text-rose-200"><X className="mx-auto"/></button></div>
-        <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col"><div className="flex items-center justify-center gap-3 text-center text-xs uppercase tracking-[.2em] text-[#8b5362] mb-3"><Users className="w-4 h-4"/><span>Our shared pages · all time</span></div>
+        <div className="rounded-[2rem] border border-fuchsia-300/15 bg-[#fff8ec] text-[#35151e] min-h-[70vh] p-5 sm:p-9 shadow-2xl flex flex-col"><div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-3"><div className="flex items-center justify-center gap-3 text-center text-xs uppercase tracking-[.2em] text-[#8b5362]"><Users className="w-4 h-4"/><span>Our shared pages · all time</span></div><div className="flex items-center gap-2"><button type="button" onClick={() => startCall('voice')} disabled={callState !== 'idle'} className="rounded-full border border-[#a86b73]/20 bg-white/60 px-3 py-1.5 text-xs disabled:opacity-40">📞 Voice</button><button type="button" onClick={() => startCall('video')} disabled={callState !== 'idle'} className="rounded-full border border-[#a86b73]/20 bg-white/60 px-3 py-1.5 text-xs disabled:opacity-40">📹 Video</button></div></div>
           <div className="text-center text-xs text-[#8b5362] mb-5">{liveOnline > 1 ?' Together right now ❤️' : 'Waiting for your person…'}</div>
           {liveTyping && <div className="text-center font-serif italic text-sm text-[#8b5362] animate-pulse mb-3">✍️ Your person is writing…</div>}
           <div ref={liveMessagesRef} onScroll={handleLiveScroll} className="flex-1 space-y-4 overflow-y-auto max-h-[58vh] pr-1">
             {liveMessages.length===0 && <div className="h-full min-h-64 flex items-center justify-center text-center font-serif italic text-[#8b5362]">The page is blank.<br/>Start writing together. ❤️</div>}
-            {liveMessages.map((message)=><div key={message.id} className={`flex ${message.author_id===liveUserId?'justify-end':'justify-start'}`}><div className={`relative max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'} ${message.pinned ? 'ring-2 ring-[#b98955]/50' : ''} `}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>{message.pinned&&<span className="absolute -top-2 right-2 rounded-full bg-[#fff8ec] px-2 py-1 text-[9px] text-[#8b5362] shadow"><Pin className="inline w-3 h-3 mr-1"/>Pinned</span>}{message.media_url&&<div className="mb-2 overflow-hidden rounded-xl">{message.media_type?.startsWith('image/')?<img src={message.media_url} alt="Shared" className="max-h-72 w-full object-contain"/>:message.media_type?.startsWith('audio/')?<div className="p-2 flex items-center gap-2"><Volume2 className="w-4 h-4"/><audio controls src={message.media_url} className="w-full"/></div>:message.media_type?.startsWith('video/')?<video controls src={message.media_url} className="w-full max-h-72"/>:<a href={message.media_url} target="_blank" rel="noreferrer" className="block p-3 underline text-sm">Open attachment</a>}</div>}<div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><button type="button" onClick={(event)=>{event.stopPropagation();toggleLivePinned(message)}} className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] text-[#8b5362] hover:bg-black/5">{message.pinned?<PinOff className="w-3 h-3"/>:<Pin className="w-3 h-3"/>}{message.pinned?"Unpin":"Pin"}</button><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => {
+            {renderLiveMessages()}<div className={`relative max-w-[88%] px-4 py-3 rounded-2xl shadow-sm ${message.author_id===liveUserId?'bg-[#f4dbe2] rounded-br-sm':'bg-[#f7ead8] rounded-bl-sm'} ${message.pinned ? 'ring-2 ring-[#b98955]/50' : ''} `}><span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId?'You':'Your person'} · {new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>{message.pinned&&<span className="absolute -top-2 right-2 rounded-full bg-[#fff8ec] px-2 py-1 text-[9px] text-[#8b5362] shadow"><Pin className="inline w-3 h-3 mr-1"/>Pinned</span>}{message.media_url&&<div className="mb-2 overflow-hidden rounded-xl">{message.media_type?.startsWith('image/')?<img src={message.media_url} alt="Shared" className="max-h-72 w-full object-contain"/>:message.media_type?.startsWith('audio/')?<div className="p-2 flex items-center gap-2"><Volume2 className="w-4 h-4"/><audio controls src={message.media_url} className="w-full"/></div>:message.media_type?.startsWith('video/')?<video controls src={message.media_url} className="w-full max-h-72"/>:<a href={message.media_url} target="_blank" rel="noreferrer" className="block p-3 underline text-sm">Open attachment</a>}</div>}<div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div><button type="button" onClick={(event)=>{event.stopPropagation();toggleLivePinned(message)}} className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] text-[#8b5362] hover:bg-black/5">{message.pinned?<PinOff className="w-3 h-3"/>:<Pin className="w-3 h-3"/>}{message.pinned?"Unpin":"Pin"}</button><LiveJournalMessageActions message={message} userId={liveUserId} messages={liveMessages} reactions={liveReactions.filter((reaction) => reaction.message_id === message.id)} onSent={addLiveMessage} onReactionRefresh={async () => {
   const { data } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
   setLiveReactions(data || []);
 }} /></div></div>)}
@@ -442,6 +586,20 @@ export const JournalPage = () => {
             </button>
           </form>
         </div></div></div>}
+
+      {(callState !== 'idle' || incomingCall) && (
+        <div className="fixed inset-0 z-[90] bg-[#12060b]/95 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl rounded-[2rem] bg-[#fff8ec] text-[#35151e] p-6 shadow-2xl">
+            {incomingCall && callState === 'idle' ? (
+              <div className="text-center py-10"><div className="text-6xl mb-4">{incomingCall.call_type === 'video' ? '📹' : '📞'}</div><p className="text-[10px] uppercase tracking-[.25em] text-[#8b5362]">Incoming {incomingCall.call_type} call</p><h3 className="font-serif text-3xl italic mt-2">Your person is calling…</h3><div className="mt-7 flex justify-center gap-3"><button type="button" onClick={rejectIncomingCall} className="rounded-full bg-[#35151e] text-white px-6 py-3">Decline</button><button type="button" onClick={acceptIncomingCall} className="rounded-full bg-[#c92f5a] text-white px-6 py-3">Accept</button></div></div>
+            ) : (
+              <div><div className="flex items-center justify-between"><div><p className="text-[10px] uppercase tracking-[.25em] text-[#8b5362]">{callState === 'calling' ? 'Calling…' : 'Connected'}</p><h3 className="font-serif text-3xl italic">{callType === 'video' ? 'Video call' : 'Voice call'}</h3></div><button type="button" onClick={endCall} className="rounded-full bg-[#35151e] text-white px-5 py-2">End</button></div>
+              {callType === 'video' ? <div className="relative mt-5 rounded-2xl overflow-hidden bg-black aspect-video"><video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover"/><video ref={localVideoRef} autoPlay muted playsInline className="absolute right-3 top-3 w-28 sm:w-40 aspect-video object-cover rounded-xl border-2 border-white/50"/></div> : <div className="mt-10 h-48 rounded-2xl bg-[#f4dbe2] flex items-center justify-center text-6xl animate-pulse">📞</div>}
+              <div className="mt-5 flex justify-center gap-3"><button type="button" onClick={toggleCallMute} className="rounded-full border border-[#8b5362]/20 px-4 py-2">{callMuted ? '🔇 Unmute' : '🎙️ Mute'}</button>{callType === 'video' && <button type="button" onClick={toggleCallCamera} className="rounded-full border border-[#8b5362]/20 px-4 py-2">{cameraOff ? '📷 Camera on' : '📵 Camera off'}</button>}</div></div>
+            )}
+          </div>
+        </div>
+      )}
 
       {selectedEntry && <div className="fixed inset-0 z-50 bg-velvet-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-8" onClick={()=>setSelectedEntry(null)}><div className="min-h-full flex items-center justify-center py-6 sm:py-10"><article onClick={e=>e.stopPropagation()} className="relative w-full max-w-4xl min-h-[78vh] rounded-[2rem] border border-rose-300/15 bg-[#fff8ec] text-[#35151e] shadow-2xl overflow-hidden"><button type="button" onClick={()=>setSelectedEntry(null)} className="absolute right-4 top-4 z-20 w-10 h-10 rounded-full bg-[#5a1c2c]/10 text-[#5a1c2c]"><X className="w-5 h-5 mx-auto"/></button><div className="relative z-10 px-7 py-10 sm:px-16 sm:py-14 md:px-20"><div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] uppercase tracking-[.2em] text-[#8b5362]"><span>{new Date(selectedEntry.entry_date+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span><span>•</span><span>{selectedEntry.author==='his'?'🖤 Him':selectedEntry.author==='her'?'💗 Her':'💞 Both of us'}</span><span>•</span><span>{selectedEntry.mood_emoji||'❤️'} {selectedEntry.mood||'A little feeling'}</span></div><h2 className="mt-8 font-serif text-4xl sm:text-6xl italic leading-tight text-[#4a1724]">{selectedEntry.title}</h2><div className="mt-8 h-px bg-[#a86b73]/25"/><p className="mt-9 whitespace-pre-wrap break-words font-serif text-lg sm:text-xl leading-[2] text-[#4a2630]">{selectedEntry.content}</p><div className="mt-12 pt-5 border-t border-[#a86b73]/20 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={()=>toggleFavorite(selectedEntry)} className="inline-flex items-center gap-2 text-sm text-[#8b5362]">{selectedEntry.favorite?<Star className="w-4 h-4 text-amber-500 fill-amber-500"/>:<Star className="w-4 h-4"/>} {selectedEntry.favorite?'Close to our hearts':'Keep this one close'}</button><div className="flex gap-2"><button type="button" onClick={()=>openEdit(selectedEntry)} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#5a1c2c]">Edit</button><button type="button" onClick={()=>{setSelectedEntry(null);remove(selectedEntry.id)}} className="text-xs px-4 py-2 rounded-xl bg-[#5a1c2c]/10 text-[#8b5362]"><Trash2 className="w-3.5 h-3.5 inline mr-1"/>Delete</button></div></div></div></article></div></div>}
 
