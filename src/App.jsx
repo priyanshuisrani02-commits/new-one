@@ -38,5 +38,5 @@ const MainApp = () => {
   </div>;
 };
 export default function App() {
-  return <CoupleProvider><SiteAuthGate><MainApp /></SiteAuthGate></CoupleProvider>;
+  return <SiteAuthGate><CoupleProvider><MainApp /></CoupleProvider></SiteAuthGate>;
 }
