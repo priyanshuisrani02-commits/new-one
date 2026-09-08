@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS public.voice_notes (
     audio_url TEXT NOT NULL,
     duration TEXT DEFAULT '0:30',
     transcript_or_note TEXT,
+    open_when_key TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
