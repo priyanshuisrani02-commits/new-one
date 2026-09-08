@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CoupleProvider } from './context/CoupleContext';
 import { Navbar } from './components/Navbar';
 import { AdminAuthGate } from './components/AdminAuthGate';
+import { SiteAuthGate } from './components/SiteAuthGate';
 import { LandingPage } from './pages/LandingPage';
 import { HallOfMemories } from './pages/HallOfMemories';
 import { ActivityGenerator } from './pages/ActivityGenerator';
@@ -36,4 +37,6 @@ const MainApp = () => {
     <footer className="relative z-10 border-t border-rose-900/30 bg-velvet-950/90 py-6 sm:py-8 text-center text-xs text-rose-300/60"><div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4"><div className="flex items-center space-x-2"><Heart className="w-4 h-4 text-rose-500 fill-rose-500" /><span className="font-serif text-sm font-semibold text-rose-200">4EVER URS</span><span>— Made with love</span></div><div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 text-[11px] sm:text-xs"><button onClick={()=>setActiveTab('home')}>Home</button><button onClick={()=>setActiveTab('memories')}>Memories</button><button onClick={()=>setActiveTab('journal')}>Journal</button><button onClick={()=>setActiveTab('activities')}>Date Generator</button><button onClick={()=>setActiveTab('admin')}>Admin</button><button onClick={()=>setActiveTab('word-sphere-admin')}>Word Sphere</button></div></div></footer>
   </div>;
 };
-export default function App() { return <CoupleProvider><MainApp /></CoupleProvider>; }
+export default function App() {
+  return <CoupleProvider><SiteAuthGate><MainApp /></SiteAuthGate></CoupleProvider>;
+}
