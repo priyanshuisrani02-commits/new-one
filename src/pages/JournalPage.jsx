@@ -201,9 +201,14 @@ export const JournalPage = () => {
             }
             remoteIceQueueRef.current = [];
             setCallState('connected');
-          } else if (payload.call_id === callIdRef.current && payload.type === 'ice' && peerRef.current) {
-            if (peerRef.current.remoteDescription) await peerRef.current.addIceCandidate(payload.candidate);
-            else remoteIceQueueRef.current.push(payload.candidate);
+          } else if (payload.type === 'ice') {
+            if (peerRef.current?.remoteDescription) {
+              await peerRef.current.addIceCandidate(payload.candidate);
+            } else {
+              // The callee may not have pressed Accept yet. Queue ICE
+              // candidates until the peer connection has a remote description.
+              remoteIceQueueRef.current.push(payload.candidate);
+            }
           } else if (payload.call_id === callIdRef.current && payload.type === 'reject') {
             cleanupCall();
             setError('The call was declined.');
