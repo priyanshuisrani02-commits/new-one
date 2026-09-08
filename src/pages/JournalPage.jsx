@@ -109,10 +109,11 @@ export const JournalPage = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       setLiveUserId(user?.id || null);
-      const { data, error: liveError } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: true });
+      const { data, error: liveError } = await supabase.from('live_journal_messages').select('*').order('created_at', { ascending: false }).limit(1000);
       if (liveError) { setError(liveError.message); return; }
-      const messages = data || [];
+      const messages = (data || []).reverse();
       liveMessagesSnapshotRef.current = messages;
+      liveLatestCreatedAtRef.current = messages.length ? messages[messages.length - 1].created_at : null;
       setLiveMessages(messages);
       const { data: reactionRows } = await supabase.from('live_journal_reactions').select('id,message_id,user_id,emoji');
       setLiveReactions(reactionRows || []);
@@ -218,7 +219,7 @@ export const JournalPage = () => {
     const messageChannel = supabase
       .channel('live-journal-messages')
       .on('broadcast', { event: 'new-message' }, ({ payload }) => {
-        if (payload?.author_id === liveUserId) return;
+        if (payload?.author_id === liveUserIdRef.current) return;
         // Broadcast payloads use client_id (not the database id), so they must
         // be keyed by client_id or multiple quick messages overwrite each other.
         mergeMessages([payload], false);
