@@ -42,6 +42,7 @@ export const JournalPage = () => {
   const [liveOnline, setLiveOnline] = useState(1);
   const [liveAttachment, setLiveAttachment] = useState(null);
   const [liveSending, setLiveSending] = useState(false);
+  const liveSendInFlightRef = useRef(false);
   const [liveRecording, setLiveRecording] = useState(false);
   const [callState, setCallState] = useState('idle');
   const [callType, setCallType] = useState(null);
@@ -287,10 +288,15 @@ export const JournalPage = () => {
 
   const sendLiveMessage = async (event) => {
     event.preventDefault();
+    // A fast double-click / touch+click can fire submit twice before React
+    // finishes the first state update. The ref is synchronous, so only one
+    // database insert can start for a single send action.
+    if (liveSendInFlightRef.current) return;
     const content = liveText.trim();
     if (!content && !liveAttachment) return;
+    liveSendInFlightRef.current = true;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setError('Please sign in to use Live Journal.'); return; }
+    if (!user) { liveSendInFlightRef.current = false; setError('Please sign in to use Live Journal.'); return; }
 
     const clientId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -327,6 +333,7 @@ export const JournalPage = () => {
       setLiveMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setError(sendError?.message || 'Could not send that message.');
     } finally {
+      liveSendInFlightRef.current = false;
       setLiveSending(false);
     }
   };
