@@ -54,6 +54,9 @@ export const JournalPage = () => {
   const callIdRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const callStateRef = useRef('idle');
+  const localStreamRef = useRef(null);
+  const remoteIceQueueRef = useRef([]);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -189,13 +192,18 @@ export const JournalPage = () => {
       .on('broadcast', { event: 'call-signal' }, async ({ payload }) => {
         if (!payload || payload.sender_id === liveUserId) return;
         try {
-          if (payload.type === 'offer' && callState === 'idle') {
+          if (payload.type === 'offer' && callStateRef.current === 'idle') {
             setIncomingCall({ call_id: payload.call_id, call_type: payload.call_type, description: payload.description });
           } else if (payload.call_id === callIdRef.current && payload.type === 'answer' && peerRef.current) {
             await peerRef.current.setRemoteDescription(payload.description);
+            for (const candidate of remoteIceQueueRef.current) {
+              try { await peerRef.current.addIceCandidate(candidate); } catch {}
+            }
+            remoteIceQueueRef.current = [];
             setCallState('connected');
           } else if (payload.call_id === callIdRef.current && payload.type === 'ice' && peerRef.current) {
-            await peerRef.current.addIceCandidate(payload.candidate);
+            if (peerRef.current.remoteDescription) await peerRef.current.addIceCandidate(payload.candidate);
+            else remoteIceQueueRef.current.push(payload.candidate);
           } else if (payload.call_id === callIdRef.current && payload.type === 'reject') {
             cleanupCall();
             setError('The call was declined.');
@@ -358,10 +366,13 @@ export const JournalPage = () => {
   };
 
 
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
+  useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
+
   const cleanupCall = () => {
     peerRef.current?.close();
     peerRef.current = null;
-    localStream?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
     setLocalStream(null);
     setRemoteStream(null);
     setCallState('idle');
@@ -380,7 +391,21 @@ export const JournalPage = () => {
   const startCall = async (type) => {
     if (callState !== 'idle' || !liveUserId || !navigator.mediaDevices?.getUserMedia) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+        video: type === 'video' ? {
+          facingMode: { ideal: 'user' },
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 360, max: 720 },
+          frameRate: { ideal: 24, max: 30 },
+        } : false,
+      });
       const callId = crypto.randomUUID();
       const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }] });
       peerRef.current = peer;
@@ -388,8 +413,28 @@ export const JournalPage = () => {
       setCallType(type);
       setLocalStream(stream);
       stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-      peer.ontrack = (event) => { if (event.streams[0]) setRemoteStream(event.streams[0]); };
+      for (const sender of peer.getSenders()) {
+        const params = sender.getParameters();
+        params.encodings = params.encodings || [{}];
+        if (sender.track?.kind === 'audio') params.encodings[0].maxBitrate = 96000;
+        if (sender.track?.kind === 'video') {
+          params.encodings[0].maxBitrate = 900000;
+          params.encodings[0].maxFramerate = 24;
+        }
+        try { await sender.setParameters(params); } catch {}
+      }
+      peer.ontrack = (event) => {
+        if (event.streams[0]) {
+          setRemoteStream(event.streams[0]);
+          window.setTimeout(() => remoteVideoRef.current?.play?.().catch(() => {}), 0);
+        }
+      };
       peer.onicecandidate = (event) => { if (event.candidate) sendCallSignal({ type: 'ice', call_id: callId, sender_id: liveUserId, candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate }); };
+      peer.onconnectionstatechange = () => {
+        if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) {
+          if (peer.connectionState === 'failed') setError('The call connection failed. Please try again.');
+        }
+      };
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       setCallState('calling');
@@ -404,16 +449,38 @@ export const JournalPage = () => {
     const call = incomingCall;
     if (!call) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: call.call_type === 'video' });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 48000 },
+        video: call.call_type === 'video' ? { facingMode: { ideal: 'user' }, width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 24, max: 30 } } : false,
+      });
       const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }] });
       peerRef.current = peer;
       callIdRef.current = call.call_id;
       setCallType(call.call_type);
       setLocalStream(stream);
       stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-      peer.ontrack = (event) => { if (event.streams[0]) setRemoteStream(event.streams[0]); };
+      for (const sender of peer.getSenders()) {
+        const params = sender.getParameters();
+        params.encodings = params.encodings || [{}];
+        if (sender.track?.kind === 'audio') params.encodings[0].maxBitrate = 96000;
+        if (sender.track?.kind === 'video') { params.encodings[0].maxBitrate = 900000; params.encodings[0].maxFramerate = 24; }
+        try { await sender.setParameters(params); } catch {}
+      }
+      peer.ontrack = (event) => {
+        if (event.streams[0]) {
+          setRemoteStream(event.streams[0]);
+          window.setTimeout(() => remoteVideoRef.current?.play?.().catch(() => {}), 0);
+        }
+      };
+      peer.onconnectionstatechange = () => {
+        if (peer.connectionState === 'failed') setError('The call connection failed. Please try again.');
+      };
       peer.onicecandidate = (event) => { if (event.candidate) sendCallSignal({ type: 'ice', call_id: call.call_id, sender_id: liveUserId, candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate }); };
       await peer.setRemoteDescription(call.description);
+      for (const candidate of remoteIceQueueRef.current) {
+        try { await peer.addIceCandidate(candidate); } catch {}
+      }
+      remoteIceQueueRef.current = [];
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       sendCallSignal({ type: 'answer', call_id: call.call_id, sender_id: liveUserId, description: peer.localDescription });
