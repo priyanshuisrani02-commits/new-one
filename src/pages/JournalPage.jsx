@@ -34,6 +34,7 @@ export const JournalPage = () => {
   const liveInitialScrollRef = React.useRef(false);
   const liveMessagesSnapshotRef = React.useRef([]);
   const liveShouldStickToBottomRef = React.useRef(true);
+  const liveLatestCreatedAtRef = React.useRef(null);
   const liveTypingRef = useRef(null);
   const liveRecorderRef = useRef(null);
   const liveRecordedChunksRef = useRef([]);
@@ -66,7 +67,7 @@ export const JournalPage = () => {
   const openEntry = (entry) => { setSelectedEntry(entry); setError(''); };
 
   const openLiveJournal = () => {
-    setBookOpen(false); setOpeningBook(false); setLiveOpen(true); setLiveUnread(0); liveInitialScrollRef.current = true; setError(''); loadLiveJournal();
+    setBookOpen(false); setOpeningBook(false); setLiveOpen(true); setLiveUnread(0); liveInitialScrollRef.current = true; liveShouldStickToBottomRef.current = true; liveLatestCreatedAtRef.current = null; setError(''); loadLiveJournal();
   };
 
   const loadLiveJournal = async () => {
@@ -98,53 +99,66 @@ export const JournalPage = () => {
     if (!liveOpen || !liveUserId) return undefined;
     let disposed = false;
 
-    const mergeMessage = (incoming) => {
-      if (!incoming?.content && !incoming?.media_url) return;
+    const mergeMessages = (incoming) => {
+      if (!incoming?.length) return;
       setLiveMessages((prev) => {
-        const existing = prev.find((m) =>
-          (incoming.id && m.id === incoming.id) ||
-          (incoming.client_id && m.client_id && m.client_id === incoming.client_id)
+        const byId = new Map(prev.map((message) => [message.id, message]));
+        const byClient = new Map(
+          prev.filter((message) => message.client_id).map((message) => [message.client_id, message.id]),
         );
-        const next = existing
-          ? prev.map((m) => (
-              (incoming.id && m.id === incoming.id) ||
-              (incoming.client_id && m.client_id && m.client_id === incoming.client_id)
-            ) ? { ...m, ...incoming, __optimistic: false } : m)
-          : [...prev, incoming];
-        next.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+        incoming.forEach((message) => {
+          const existingId = byId.has(message.id)
+            ? message.id
+            : (message.client_id && byClient.get(message.client_id));
+          if (existingId && byId.has(existingId)) {
+            byId.set(existingId, { ...byId.get(existingId), ...message, __optimistic: false });
+          } else {
+            byId.set(message.id, message);
+          }
+        });
+
+        const next = Array.from(byId.values()).sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at),
+        );
         liveMessagesSnapshotRef.current = next;
+        if (next.length) {
+          liveLatestCreatedAtRef.current = next[next.length - 1].created_at;
+        }
         return next;
       });
     };
 
-    const syncLatestMessages = async () => {
+    const loadInitial = async () => {
       const { data, error } = await supabase
         .from('live_journal_messages')
         .select('*')
         .order('created_at', { ascending: true });
-      if (disposed || error || !data) return;
-
-      setLiveMessages((prev) => {
-        const pending = prev.filter((message) => message.__optimistic);
-        const merged = [...data, ...pending.filter(
-          (pendingMessage) => !data.some(
-            (message) => message.client_id && message.client_id === pendingMessage.client_id
-          )
-        )];
-        merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        liveMessagesSnapshotRef.current = merged;
-        return merged;
-      });
+      if (disposed || error) return;
+      mergeMessages(data || []);
     };
 
-    syncLatestMessages();
-    const poll = window.setInterval(syncLatestMessages, 2000);
+    const loadNewMessages = async () => {
+      const cursor = liveLatestCreatedAtRef.current;
+      let query = supabase
+        .from('live_journal_messages')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (cursor) query = query.gt('created_at', cursor);
+      const { data, error } = await query;
+      if (disposed || error || !data?.length) return;
+      mergeMessages(data);
+    };
+
+    loadInitial();
+    const poll = window.setInterval(loadNewMessages, 1000);
 
     const messageChannel = supabase
       .channel('live-journal-messages')
       .on('broadcast', { event: 'new-message' }, ({ payload }) => {
         if (payload?.author_id === liveUserId) return;
-        mergeMessage(payload);
+        mergeMessages([payload]);
       })
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         if (payload?.user_id === liveUserId) return;
@@ -155,7 +169,7 @@ export const JournalPage = () => {
         }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_journal_messages' }, (payload) => {
-        mergeMessage(payload.new);
+        mergeMessages([payload.new]);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') liveChannelRef.current = messageChannel;
