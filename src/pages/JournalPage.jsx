@@ -27,6 +27,7 @@ export const JournalPage = () => {
   const [liveMessages, setLiveMessages] = useState([]);
   const [liveText, setLiveText] = useState('');
   const [liveUserId, setLiveUserId] = useState(null);
+  const liveUserIdRef = useRef(null);
   const [liveUnread, setLiveUnread] = useState(0);
   const [liveEmojiOpen, setLiveEmojiOpen] = useState(false);
   const [liveReactions, setLiveReactions] = useState([]);
@@ -58,6 +59,25 @@ export const JournalPage = () => {
   const callStateRef = useRef('idle');
   const localStreamRef = useRef(null);
   const remoteIceQueueRef = useRef([]);
+
+  useEffect(() => {
+    let mounted = true;
+    const syncUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (mounted) {
+        liveUserIdRef.current = user?.id || null;
+        liveUserIdRef.current = user?.id || null;
+      setLiveUserId(user?.id || null);
+      }
+    };
+    void syncUser();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const id = session?.user?.id || null;
+      liveUserIdRef.current = id;
+      if (mounted) setLiveUserId(id);
+    });
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, []);
 
   const loadEntries = async () => {
     const { data, error: loadError } = await supabase.from('journal_entries').select('*').order('entry_date', { ascending: false }).order('created_at', { ascending: false });
@@ -547,9 +567,9 @@ export const JournalPage = () => {
     return (
       <React.Fragment key={message.client_id || message.id}>
         {dayChanged && <div className="flex items-center gap-3 py-2"><div className="h-px flex-1 bg-[#a86b73]/15" /><span className="rounded-full bg-[#f1e0d0] px-3 py-1 text-[10px] uppercase tracking-[.12em] text-[#8b5362]">{dayLabel}</span><div className="h-px flex-1 bg-[#a86b73]/15" /></div>}
-        <div className={"flex " + (message.author_id===liveUserId ? "justify-end" : "justify-start")}>
+        <div className={"flex " + ((message.author_id === liveUserIdRef.current) ? "justify-end" : "justify-start")}>
           <div className={"relative max-w-[88%] px-4 py-3 rounded-2xl shadow-sm " + (message.author_id===liveUserId ? "bg-[#f4dbe2] rounded-br-sm" : "bg-[#f7ead8] rounded-bl-sm") + (message.pinned ? " ring-2 ring-[#b98955]/50" : "")}>
-            <span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id===liveUserId ? "You" : "Your person"} · {currentDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+            <span className="block text-[9px] font-sans uppercase tracking-[.15em] text-[#8b5362] mb-1">{message.author_id === liveUserIdRef.current ? "You" : "Your person"} · {currentDate.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
             {message.pinned && <span className="absolute -top-2 right-2 rounded-full bg-[#fff8ec] px-2 py-1 text-[9px] text-[#8b5362] shadow"><Pin className="inline w-3 h-3 mr-1" />Pinned</span>}
             {message.media_url && <div className="mb-2 overflow-hidden rounded-xl">{message.media_type?.startsWith("image/") ? <img src={message.media_url} alt="Shared" className="max-h-72 w-full object-contain" /> : message.media_type?.startsWith("audio/") ? <div className="p-2 flex items-center gap-2"><Volume2 className="w-4 h-4" /><audio controls src={message.media_url} className="w-full" /></div> : message.media_type?.startsWith("video/") ? <video controls src={message.media_url} className="w-full max-h-72" /> : <a href={message.media_url} target="_blank" rel="noreferrer" className="block p-3 underline text-sm">Open attachment</a>}</div>}
             <div className="whitespace-pre-wrap break-words font-serif text-lg leading-relaxed">{message.content}</div>
